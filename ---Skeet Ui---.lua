@@ -202,6 +202,28 @@ do -- Library
         local RenderConn = nil
         local Diag = {}
         local ExecJobs = {}
+        local UiJobs = {}
+
+        -- UI 事件回调（按钮/网格点击）在游戏信号线程触发，缺 Plugin capability，
+        -- 凡是回调里要建 Instance 或调外部 require 的逻辑都丢到这个注入身份串行线程。
+        -- 单线程保证多次点击按顺序执行。
+        task.spawn(function()
+            while true do
+                local job = table.remove(UiJobs, 1)
+                if job then
+                    local ok, err = pcall(job)
+                    if not ok then
+                        warn("[NERX][UI] 回调执行失败: " .. tostring(err))
+                    end
+                else
+                    task.wait()
+                end
+            end
+        end)
+
+        function Library:RunAsync(fn)
+            UiJobs[#UiJobs + 1] = fn
+        end
 
         local function ensureTurntable()
             if RenderConn then return end
@@ -5114,11 +5136,18 @@ do -- Library
                 Library:Connection(button.MouseButton1Click, function()
                     if Library.UI.Faded then return end
                     Grid:SetSelected(name)
-                    Options.Callback(name, Grid._specs[name])
+                    -- 用户回调在游戏信号线程触发，统一派发到注入身份线程（可建 Instance / 调外部逻辑）
+                    Library:RunAsync(function()
+                        Options.Callback(name, Grid._specs[name])
+                    end)
                 end, "ModelGrid Click")
                 Library:Connection(button.MouseButton2Click, function()
                     if Library.UI.Faded then return end
-                    Options.RightClick(name, Grid._specs[name])
+                    if Options.RightClick then
+                        Library:RunAsync(function()
+                            Options.RightClick(name, Grid._specs[name])
+                        end)
+                    end
                 end, "ModelGrid RightClick")
                 Library:Connection(button.MouseEnter, function()
                     if Library.UI.Faded then return end
@@ -6715,17 +6744,23 @@ do -- Library
                         Parent = SectionMain
                     })
                     --
-                    -- 首选图标加载失败自动切备用（Value 传 {首选, 备用}）
-                    if type(Value) == "table" and Value[2] then
+                    -- 图标候选链：Value 可传字符串或 {候选1, 候选2, ...}
+                    -- 新上传图片可能还在审核：循环重试所有候选，审核通过后自动显示
+                    local iconCandidates = type(Value) == "table" and Value or {Value}
+                    if #iconCandidates > 1 then
                         task.spawn(function()
-                            task.wait(0.2)
-                            local t = 0
-                            while Icon.Parent and not Icon.IsLoaded and t < 2 do
-                                task.wait(0.05)
-                                t += 0.05
-                            end
-                            if Icon.Parent and not Icon.IsLoaded then
-                                Icon.Image = Value[2]
+                            local idx = 1
+                            Icon.Image = iconCandidates[1]
+                            while Icon.Parent do
+                                local t = 0
+                                while Icon.Parent and not Icon.IsLoaded and t < 4 do
+                                    task.wait(0.1)
+                                    t += 0.1
+                                end
+                                if not Icon.Parent then return end
+                                if Icon.IsLoaded then return end
+                                idx = (idx % #iconCandidates) + 1
+                                Icon.Image = iconCandidates[idx]
                             end
                         end)
                     end
