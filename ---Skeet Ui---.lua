@@ -2866,6 +2866,7 @@ do -- Library
             BorderColor3 = Color3.fromRGB(0, 0, 0),
             ZIndex = 10,
             BorderSizePixel = 0,
+            Visible = false,
             BackgroundColor3 = Color3.fromRGB(12, 12, 12),
             Parent = Library.UI.ScreenGUI
         })
@@ -2912,6 +2913,9 @@ do -- Library
                 --
                 if Bool then
                     Library.Objects[PreviewDropdown_5] = {PreviewDropdown_5, OldValues[2], true}
+                else
+                    if Dropdown.Open then Dropdown:Toggle(true) end
+                    DropdownMainOutline.Visible = false
                 end
                 --
                 Library:Fade(Bool, Library:GetObjectsTable(PreviewDropdown_5), PreviewDropdown_5, 0.075)
@@ -3043,15 +3047,18 @@ do -- Library
                     if Fast then
                         Library:Fade(false, Library:GetObjectsTable(DropdownMainOutline, true), DropdownMainOutline, 0)
                         DropdownMainOutline.Size = UDim2.new(0, DropdownOutline_5.AbsoluteSize.X, 0, 0)
+                        DropdownMainOutline.Visible = false
                         Library.Objects[DropdownMainOutline] = {DropdownMainOutline, OldValues[2], true}
                     else
                         Library:Fade(false, Library:GetObjectsTable(DropdownMainOutline, true), DropdownMainOutline, 0.1)
                         Library:TweenObject(DropdownMainOutline, TweenInfo.new(Library.UI.TweenSpeed, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = UDim2.new(0, DropdownOutline_5.AbsoluteSize.X, 0, 0)}, function()
+                            DropdownMainOutline.Visible = false
                             Library.Objects[DropdownMainOutline] = {DropdownMainOutline, OldValues[2], true}
                         end)
                     end
                 else
                     Library.Objects[DropdownMainOutline] = {DropdownMainOutline, OldValues[2], false}
+                    DropdownMainOutline.Visible = true
                     --
                     if Fast then
                         Library:Fade(true, Library:GetObjectsTable(DropdownMainOutline, true), DropdownMainOutline, 0)
@@ -3071,6 +3078,8 @@ do -- Library
                 --
                 if Dropdown.Open then
                     DropdownMainOutline.Visible = Library:ScrollingCheck(Options.Parent, DropdownChecker)
+                else
+                    DropdownMainOutline.Visible = false
                 end
             end
             --
@@ -3166,7 +3175,10 @@ do -- Library
             Dropdown:SetVisible(false)
         end
         --
+        -- 初始化：先打开一次测量内容尺寸，再立即复位为关闭态（修复非活动 Tab 创建时浮层泄露）
         Dropdown:Toggle(true)
+        Dropdown:Toggle(true)
+        DropdownMainOutline.Visible = false
         --
         return Dropdown
     end
@@ -6436,6 +6448,7 @@ do -- Library
                     BorderColor3 = Color3.fromRGB(0, 0, 0),
                     ZIndex = 50,
                     BorderSizePixel = 0,
+                    Visible = false,
                     BackgroundColor3 = Color3.fromRGB(12, 12, 12),
                     Parent = Library.UI.ScreenGUI
                 })
@@ -6604,15 +6617,18 @@ do -- Library
                             if Fast then
                                 Library:Fade(false, Library:GetObjectsTable(DropdownMainOutline, true), DropdownMainOutline, 0)
                                 DropdownMainOutline.Size = UDim2.new(0, DropdownImageOutline.AbsoluteSize.X, 0, 0)
+                                DropdownMainOutline.Visible = false
                                 Library.Objects[DropdownMainOutline] = {DropdownMainOutline, OldValues[2], true}
                             else
                                 Library:Fade(false, Library:GetObjectsTable(DropdownMainOutline, true), DropdownMainOutline, 0.1)
                                 Library:TweenObject(DropdownMainOutline, TweenInfo.new(Library.UI.TweenSpeed, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = UDim2.new(0, DropdownImageOutline.AbsoluteSize.X, 0, 0)}, function()
+                                    DropdownMainOutline.Visible = false
                                     Library.Objects[DropdownMainOutline] = {DropdownMainOutline, OldValues[2], true}
                                 end)
                             end
                         else
                             Library.Objects[DropdownMainOutline] = {DropdownMainOutline, OldValues[2], false}
+                            DropdownMainOutline.Visible = true
                             --
                             if Fast then
                                 Library:Fade(true, Library:GetObjectsTable(DropdownMainOutline, true), DropdownMainOutline, 0)
