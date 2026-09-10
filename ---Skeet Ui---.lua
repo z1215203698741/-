@@ -154,7 +154,10 @@ do -- Library
         local Connection; Connection = Signal:Connect(function(...)
             local Args = {...}
             --
-            local Success, Message = pcall(function() coroutine.wrap(Func)(unpack(Args)) end)
+            -- 直接在信号闭包内调用：该闭包保留 executor 身份；
+            -- 切勿用 coroutine.wrap/task.spawn 包一层——新协程会丢失 Plugin capability
+            -- （信号回调本身支持 yield，Roblox 每次触发在独立线程中运行闭包）
+            local Success, Message = pcall(function() return Func(unpack(Args)) end)
             --
             if not Success and not Library.Errors[Message] then
                 if Library.Notify then
@@ -227,24 +230,6 @@ do -- Library
 
         function Library:CreateModelViewport(ViewportFrame, Opts)
             Opts = Opts or {}
-            -- 统一转发到 executor 身份线程（按钮回调运行在游戏 RobloxScript 身份，直接建 Camera/require 会被拒）
-            if _G.NERXExecJobs and not Opts._viaExec then
-                local done, ret
-                table.insert(_G.NERXExecJobs, function()
-                    local o = {}
-                    for k, v in pairs(Opts) do o[k] = v end
-                    o._viaExec = true
-                    local ok, res = pcall(function() return Library:CreateModelViewport(ViewportFrame, o) end)
-                    ret = (ok and res) or {SetHover = function() end}
-                    done = true
-                end)
-                local t = 0
-                while not done and t < 12 do
-                    task.wait(0.02)
-                    t += 0.02
-                end
-                return ret or {SetHover = function() end}
-            end
             local handle = { Hovered = false }
             local lib = getSkinsLib()
 
@@ -263,78 +248,48 @@ do -- Library
                 return true
             end
 
-            -- 候选皮肤名（指定皮肤 → Stock → Vanilla）
+            -- 候选皮肤名（与 Seeto 一致：指定皮肤 → Stock → Vanilla → 知名通用皮肤兜底）
             local tries = {}
             if Opts.Skin and Opts.Skin ~= "" and Opts.Skin ~= "Random" and Opts.Skin ~= "Special" and Opts.Skin ~= "Default" then
                 table.insert(tries, Opts.Skin)
             end
             table.insert(tries, "Stock")
             table.insert(tries, "Vanilla")
-
-            -- 在当前（调用）上下文尝试全部候选皮肤名，成功返回 clone
-            local function attemptFetch(useLib)
-                for _, s in ipairs(tries) do
-                    local model
-                    local ok = pcall(function()
-                        if Opts.Type == "gloves" then
-                            model = useLib.GetGloves(Opts.Model, s, Opts.Wear or 0.99)
-                        else
-                            model = useLib.GetCharacterModel(Opts.Model, s, Opts.Wear or 0.001)
-                        end
-                    end)
-                    if ok and model then
-                        local okClone, c = pcall(function() return model:Clone() end)
-                        return (okClone and c) or model, s
-                    end
-                end
-                return nil
+            if Opts.Type == "gloves" then
+                table.insert(tries, "Specialist")
+            else
+                table.insert(tries, "Fade")
+                table.insert(tries, "Midas")
+                table.insert(tries, "Lore")
             end
 
-            -- 派发到游戏线程（由主脚本的 getCameraCFrame hook 每帧泵取），等待结果；失败重试一次
-            local function fetchViaGameThread()
-                local jobs = _G.NERXGameJobs
-                if type(jobs) ~= "table" then return nil end
-                for attempt = 1, 2 do
-                    local result
-                    table.insert(jobs, function()
-                        pcall(function()
-                            local gameLib = getSkinsLib()
-                            if gameLib then result = attemptFetch(gameLib) end
-                        end)
-                        result = result or false
-                    end)
-                    local t = 0
-                    while result == nil and t < 8 do
-                        task.wait(0.02)
-                        t += 0.02
-                    end
-                    if result and result ~= false then
-                        return result
-                    end
-                    task.wait(0.1)
-                end
-                return nil
-            end
-
+            -- 直接在当前线程取模型（调用方保证是 executor 身份：初始渲染在 task.spawn 线程，点击回调在信号闭包）
+            -- 皮肤数据库可能增量加载：GetCharacterModel 内部只在缓存全空时 Wait 一次，
+            -- 所以这里整体重试，覆盖"缓存非空但该武器数据未到"的情况
             local clone
-            if Opts.Model and Opts.Model ~= "" then
-                if lib then
-                    -- 快速路径：当前线程（已缓存的武器直接成功）
-                    local okFast, fastModel = pcall(attemptFetch, lib)
-                    if okFast and fastModel then
-                        clone = fastModel
-                    else
-                        -- 注入线程缺 capability：派发到游戏 hook 线程重试
-                        clone = fetchViaGameThread()
+            if lib and Opts.Model and Opts.Model ~= "" then
+                for attempt = 1, 9 do
+                    for _, s in ipairs(tries) do
+                        local ok, model = pcall(function()
+                            if Opts.Type == "gloves" then
+                                return lib.GetGloves(Opts.Model, s, Opts.Wear or 0.99)
+                            end
+                            return lib.GetCharacterModel(Opts.Model, s, Opts.Wear or 0.001)
+                        end)
+                        if ok and model then
+                            local okClone, c = pcall(function() return model:Clone() end)
+                            clone = (okClone and c) or model
+                            break
+                        end
                     end
-                else
-                    -- 本线程 require 不到 Skins 库：游戏线程里会重新 require 并缓存
-                    clone = fetchViaGameThread()
-                    if clone then lib = getSkinsLib() end
+                    if clone then break end
+                    if attempt < 9 then task.wait(0.35) end
                 end
                 if not clone then
                     diagOnce(Opts.Model, ("模型不可用: %s (skin=%s)"):format(Opts.Model, tostring(Opts.Skin)))
                 end
+            elseif not lib then
+                diagOnce("nolib", "Skins 库 require 失败，全部使用图标预览")
             end
 
             if not clone then
@@ -364,18 +319,19 @@ do -- Library
             end)
             clone.Parent = ViewportFrame
 
-            -- 尺寸归一化：手套等裸部件模型的原始 bbox 与武器骨架差异大，统一缩放后取景一致
-            local TARGET_SIZE = (Opts.Type == "gloves") and 1.7 or 2.3
-            pcall(function()
-                local _, sz0 = clone:GetBoundingBox()
-                local m0 = math.max(sz0.X, sz0.Y, sz0.Z, 0.01)
-                clone:ScaleTo(TARGET_SIZE / m0)
-            end)
-
             local cf, sz = clone:GetBoundingBox()
-            local maxDim = math.max(sz.X, sz.Y, sz.Z, 0.1)
-            local distFactor = (Opts.Type == "gloves") and 1.35 or 0.81
-            local dist = maxDim * distFactor
+            if Opts.Type == "gloves" then
+                -- 手套是散装部件模型，原始 bbox 与武器差异极大：先归一化尺寸再取景，避免贴脸特写
+                pcall(function()
+                    local _, sz0 = clone:GetBoundingBox()
+                    local m0 = math.max(sz0.X, sz0.Y, sz0.Z, 0.01)
+                    clone:ScaleTo(1.7 / m0)
+                end)
+                cf, sz = clone:GetBoundingBox()
+            end
+            local maxDim = math.max(sz.X, sz.Y, sz.Z, 0.5)
+            -- 与 Seeto 一致的 0.81 取景；手套稍远一点显得更小
+            local dist = maxDim * ((Opts.Type == "gloves") and 1.05 or 0.81)
             local offset = Vector3.new(dist * 0.75, dist * 0.35, dist * 0.8)
             local camPos = cf.Position + offset
 
