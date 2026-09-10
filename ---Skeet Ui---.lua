@@ -192,6 +192,110 @@ do -- Library
         Library.Tweens[#Library.Tweens + 1] = Tween
     end
     --
+    -- ==================== 3D 模型视口（ModelGrid / 皮肤选择器使用，悬停转盘共享单连接） ====================
+    do
+        local SkinsLib = nil
+        local SkinsLibTried = false
+        local Turntable = setmetatable({}, {__mode = "k"})
+        local RenderConn = nil
+
+        local function ensureTurntable()
+            if RenderConn then return end
+            RenderConn = game:GetService("RunService").RenderStepped:Connect(function(dt)
+                for handle in pairs(Turntable) do
+                    if handle.Hovered and handle._step then
+                        pcall(handle._step, handle, dt)
+                    end
+                end
+            end)
+        end
+
+        function Library:CreateModelViewport(ViewportFrame, Opts)
+            Opts = Opts or {}
+            local handle = { Hovered = false }
+
+            if not SkinsLibTried then
+                SkinsLibTried = true
+                pcall(function()
+                    SkinsLib = require(game:GetService("ReplicatedStorage").Database.Components.Libraries.Skins)
+                end)
+            end
+
+            local clone
+            if SkinsLib and Opts.Model and Opts.Model ~= "" then
+                local tries = {}
+                if Opts.Skin and Opts.Skin ~= "Random" and Opts.Skin ~= "Special" and Opts.Skin ~= "Default" then
+                    table.insert(tries, Opts.Skin)
+                end
+                table.insert(tries, "Stock")
+                table.insert(tries, "Vanilla")
+                for _, s in ipairs(tries) do
+                    local model
+                    local ok = pcall(function()
+                        model = SkinsLib.GetCharacterModel(Opts.Model, s, Opts.Wear or 0.001)
+                    end)
+                    if ok and model then
+                        local okClone, c = pcall(function() return model:Clone() end)
+                        if okClone and c then clone = c end
+                        if clone then break end
+                    end
+                end
+            end
+
+            if not clone then
+                if Opts.FallbackIcon then
+                    local img = Instance.new("ImageLabel")
+                    img.BackgroundTransparency = 1
+                    img.AnchorPoint = Vector2.new(0.5, 0.5)
+                    img.Position = UDim2.new(0.5, 0, 0.46, 0)
+                    img.Size = UDim2.new(0.72, 0, 0.72, 0)
+                    img.Image = Opts.FallbackIcon
+                    img.ScaleType = Enum.ScaleType.Fit
+                    img.ZIndex = 6
+                    img.Parent = ViewportFrame
+                end
+                handle.SetHover = function() end
+                return handle
+            end
+
+            clone.Parent = ViewportFrame
+
+            local cf, sz = clone:GetBoundingBox()
+            local maxDim = math.max(sz.X, sz.Y, sz.Z, 0.5)
+            local dist = maxDim * 0.81
+            local offset = Vector3.new(dist * 0.75, dist * 0.35, dist * 0.8)
+            local camPos = cf.Position + offset
+
+            local camera = Instance.new("Camera")
+            camera.FieldOfView = 50
+            camera.CFrame = CFrame.new(camPos, cf.Position)
+            camera.Parent = ViewportFrame
+            ViewportFrame.CurrentCamera = camera
+            pcall(function() ViewportFrame.LightColor = Color3.fromRGB(245, 245, 255) end)
+            pcall(function() ViewportFrame.Ambient = Color3.fromRGB(150, 150, 160) end)
+            pcall(function() ViewportFrame.LightDirection = Vector3.new(-1, -1.2, -1).Unit end)
+
+            local angle = 0
+            handle._step = function(_, dt)
+                if not clone.Parent or not camera.Parent then return end
+                angle = angle + dt * 1.8
+                local rotated = CFrame.Angles(0, angle, 0) * offset
+                camera.CFrame = CFrame.new(cf.Position + rotated, cf.Position)
+            end
+            function handle.SetHover(h, State)
+                h.Hovered = State and true or false
+                if not h.Hovered and camera.Parent then
+                    angle = 0
+                    camera.CFrame = CFrame.new(camPos, cf.Position)
+                end
+            end
+
+            Turntable[handle] = true
+            ensureTurntable()
+            return handle
+        end
+    end
+    --
     function Library:NewFlag()
         Library.UnnamedFlags += 1
         --
@@ -4625,6 +4729,307 @@ do -- Library
         return List
     end
     --
+    -- ==================== ModelGrid：3D 模型网格选择器（皮肤选择等） ====================
+    function Library:ModelGrid(Options)
+        Options = Library:Validate({
+            Size = 300,
+            CellSize = UDim2.fromOffset(124, 136),
+            Search = false,
+            Hidden = false,
+            SelectedColor = Color3.fromRGB(255, 170, 30),
+            Flag = Library.NewFlag(),
+            Callback = function() end,
+            RightClick = function() end,
+        }, Options or {})
+        --
+        local Grid = {
+            CurrentValueName = nil,
+            Cells = {},
+            Strokes = {},
+            Hiding = false,
+        }
+        Library.Flags[Options.Flag] = Grid
+        --
+        local PreviewGrid = Library:CreateObject("Frame", {
+            Name = "PreviewModelGrid1",
+            BackgroundTransparency = 1,
+            Size = UDim2.new(1, 0, 0, Options.Size),
+            BorderColor3 = Color3.fromRGB(0, 0, 0),
+            ZIndex = 3,
+            BorderSizePixel = 0,
+            Parent = Options.Parent,
+        })
+        --
+        local topOffset = 0
+        local searchText = ""
+        if Options.Search then
+            topOffset = 20
+            Library:TextBox({
+                Parent = PreviewGrid,
+                TypedCheck = true,
+                Size = UDim2.new(1, 20, 0, 19),
+                Position = UDim2.new(0, -20, 0, 0),
+                Callback = function(Text)
+                    searchText = (Text or ""):lower()
+                    for _, cell in pairs(Grid.Cells) do
+                        local q = cell:GetAttribute("Query") or ""
+                        cell.Visible = searchText == "" or string.find(q, searchText, nil, true) ~= nil
+                    end
+                end,
+            })
+        end
+        --
+        local GridOutline = Library:CreateObject("Frame", {
+            Name = "ModelGridOutline1",
+            Position = UDim2.new(0, -1, 0, topOffset),
+            Size = UDim2.new(1, -19, 1, -topOffset + 1),
+            BorderColor3 = Color3.fromRGB(0, 0, 0),
+            ZIndex = 3,
+            BorderSizePixel = 0,
+            BackgroundColor3 = Color3.fromRGB(12, 12, 12),
+            Parent = PreviewGrid,
+        })
+        --
+        local GridInline = Library:CreateObject("Frame", {
+            Name = "ModelGridInline1",
+            Position = UDim2.new(0, 1, 0, 1),
+            Size = UDim2.new(1, -2, 1, -2),
+            BorderColor3 = Color3.fromRGB(0, 0, 0),
+            ZIndex = 4,
+            BorderSizePixel = 0,
+            BackgroundColor3 = Color3.fromRGB(35, 35, 35),
+            Parent = GridOutline,
+        })
+        --
+        local GridScrolling = Library:CreateObject("ScrollingFrame", {
+            ScrollBarImageColor3 = Color3.fromRGB(65, 65, 65),
+            MidImage = "rbxassetid://158362264",
+            Active = true,
+            BorderColor3 = Color3.fromRGB(0, 0, 0),
+            ScrollBarThickness = 4,
+            Name = "ModelGridScrolling1",
+            ZIndex = 4,
+            TopImage = "rbxassetid://158362264",
+            Position = UDim2.new(0, 0, 0, 0),
+            Size = UDim2.new(1, 0, 1, 0),
+            BottomImage = "rbxassetid://158362264",
+            BorderSizePixel = 0,
+            CanvasSize = UDim2.new(0, 0, 0, 0),
+            AutomaticCanvasSize = Enum.AutomaticSize.Y,
+            BackgroundTransparency = 1,
+            Parent = GridInline,
+        })
+        Grid.GridScrolling = GridScrolling
+        --
+        Library:CreateObject("UIPadding", {
+            PaddingTop = UDim.new(0, 4),
+            PaddingBottom = UDim.new(0, 4),
+            PaddingLeft = UDim.new(0, 4),
+            PaddingRight = UDim.new(0, 4),
+            Parent = GridScrolling,
+        })
+        Library:CreateObject("UIGridLayout", {
+            CellSize = Options.CellSize,
+            CellPadding = UDim2.fromOffset(6, 6),
+            HorizontalAlignment = Enum.HorizontalAlignment.Left,
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Parent = GridScrolling,
+        })
+        --
+        -- 分帧懒加载队列（所有 ModelGrid 共享，避免一次创建大量 Viewport 卡顿）
+        if not Library._ModelGridQueue then
+            Library._ModelGridQueue = {}
+            game:GetService("RunService").Heartbeat:Connect(function()
+                local job = table.remove(Library._ModelGridQueue, 1)
+                if job then task.spawn(job) end
+            end)
+        end
+        local viewportQueue = Library._ModelGridQueue
+        --
+        local layoutOrder = 0
+        --
+        do -- Functions
+            function Grid:Get()
+                return Grid.CurrentValueName
+            end
+            --
+            function Grid:SetSelected(name)
+                local prev = Grid.SelectedStroke
+                if prev then
+                    prev.Color = Grid.SelectedRarity or Color3.fromRGB(150, 155, 165)
+                    prev.Transparency = 0.55
+                    prev.Thickness = 1
+                end
+                local cell = name and Grid.Cells[name]
+                if cell then
+                    local stroke = cell:FindFirstChildOfClass("UIStroke")
+                    if stroke then
+                        stroke.Color = Options.SelectedColor
+                        stroke.Transparency = 0
+                        stroke.Thickness = 2
+                        Grid.SelectedStroke = stroke
+                        Grid.SelectedRarity = Grid.Strokes[name]
+                    end
+                    Grid.CurrentValueName = name
+                else
+                    Grid.CurrentValueName = nil
+                    Grid.SelectedStroke = nil
+                    Grid.SelectedRarity = nil
+                end
+                Library.Flags[Options.Flag] = Grid
+            end
+            --
+            function Grid:AddItem(Item)
+                if not Item or not Item.Name or Grid.Cells[Item.Name] then return end
+                layoutOrder += 1
+                local name = Item.Name
+                local subText = Item.Sub or ""
+                local rarity = Item.RarityColor or Color3.fromRGB(150, 155, 165)
+                --
+                local cell = Instance.new("Frame")
+                cell.Name = name .. "_mg1"
+                cell.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
+                cell.BorderSizePixel = 0
+                cell.LayoutOrder = layoutOrder
+                cell.ZIndex = 5
+                cell:SetAttribute("Query", name:lower())
+                cell.Parent = GridScrolling
+                Grid.Cells[name] = cell
+                Grid.Strokes[name] = rarity
+                --
+                local stroke = Instance.new("UIStroke")
+                stroke.Thickness = 1
+                stroke.Color = rarity
+                stroke.Transparency = 0.55
+                stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+                stroke.Parent = cell
+                --
+                local viewport = Instance.new("ViewportFrame")
+                viewport.BackgroundColor3 = Color3.fromRGB(14, 14, 14)
+                viewport.BorderSizePixel = 0
+                viewport.Position = UDim2.new(0, 3, 0, 3)
+                viewport.Size = UDim2.new(1, -6, 1, -38)
+                viewport.ZIndex = 5
+                viewport.Parent = cell
+                --
+                local bottom = Instance.new("Frame")
+                bottom.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+                bottom.BackgroundTransparency = 0.25
+                bottom.BorderSizePixel = 0
+                bottom.Size = UDim2.new(1, 0, 0, 32)
+                bottom.Position = UDim2.new(0, 0, 1, -32)
+                bottom.ZIndex = 6
+                bottom.Parent = cell
+                --
+                local title = Instance.new("TextLabel")
+                title.BackgroundTransparency = 1
+                title.FontFace = Library.UI.NewFont
+                title.Text = name
+                title.TextColor3 = rarity
+                title.TextSize = Library.UI.FontSize
+                title.TextXAlignment = Enum.TextXAlignment.Center
+                title.TextTruncate = Enum.TextTruncate.AtEnd
+                title.Size = UDim2.new(1, -8, 0, 16)
+                title.Position = UDim2.new(0, 4, 0, 2)
+                title.ZIndex = 7
+                title.Parent = bottom
+                --
+                local subLabel = Instance.new("TextLabel")
+                subLabel.BackgroundTransparency = 1
+                subLabel.FontFace = Library.UI.NewFont
+                subLabel.Text = subText
+                subLabel.TextColor3 = Color3.fromRGB(165, 165, 165)
+                subLabel.TextSize = 11
+                subLabel.TextXAlignment = Enum.TextXAlignment.Center
+                subLabel.TextTruncate = Enum.TextTruncate.AtEnd
+                subLabel.Size = UDim2.new(1, -8, 0, 12)
+                subLabel.Position = UDim2.new(0, 4, 0, 18)
+                subLabel.ZIndex = 7
+                subLabel.Parent = bottom
+                cell:SetAttribute("SubLabel", true)
+                Grid._subLabels = Grid._subLabels or {}
+                Grid._subLabels[name] = subLabel
+                --
+                local button = Instance.new("TextButton")
+                button.BackgroundTransparency = 1
+                button.Text = ""
+                button.AutoButtonColor = false
+                button.Size = UDim2.new(1, 0, 1, 0)
+                button.ZIndex = 8
+                button.Parent = cell
+                --
+                local viewHandle
+                table.insert(viewportQueue, function()
+                    if not cell.Parent then return end
+                    pcall(function()
+                        viewHandle = Library:CreateModelViewport(viewport, Item.Viewport or {})
+                    end)
+                end)
+                --
+                Library:Connection(button.MouseButton1Click, function()
+                    if Library.UI.Faded then return end
+                    Grid:SetSelected(name)
+                    Options.Callback(name, Item)
+                end, "ModelGrid Click")
+                Library:Connection(button.MouseButton2Click, function()
+                    if Library.UI.Faded then return end
+                    Options.RightClick(name, Item)
+                end, "ModelGrid RightClick")
+                Library:Connection(button.MouseEnter, function()
+                    if Library.UI.Faded then return end
+                    cell.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
+                    if viewHandle and viewHandle.SetHover then viewHandle:SetHover(true) end
+                end, "ModelGrid Enter")
+                Library:Connection(button.MouseLeave, function()
+                    cell.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
+                    if viewHandle and viewHandle.SetHover then viewHandle:SetHover(false) end
+                end, "ModelGrid Leave")
+            end
+            --
+            function Grid:RemoveItem(name)
+                local cell = Grid.Cells[name]
+                if cell then cell:Destroy() end
+                Grid.Cells[name] = nil
+                Grid.Strokes[name] = nil
+                if Grid.CurrentValueName == name then
+                    Grid.CurrentValueName = nil
+                    Grid.SelectedStroke = nil
+                end
+            end
+            --
+            function Grid:Clear()
+                for _, cell in pairs(Grid.Cells) do
+                    cell:Destroy()
+                end
+                Grid.Cells = {}
+                Grid.Strokes = {}
+                Grid.CurrentValueName = nil
+                Grid.SelectedStroke = nil
+                layoutOrder = 0
+            end
+            --
+            function Grid:SetSub(name, text)
+                if Grid._subLabels and Grid._subLabels[name] then
+                    Grid._subLabels[name].Text = text or ""
+                end
+            end
+            --
+            function Grid:SetVisible(Bool)
+                Grid.Hiding = not Bool
+                PreviewGrid.Visible = Bool and true or false
+                Library:TweenObject(PreviewGrid, TweenInfo.new(Library.UI.TweenSpeed, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {
+                    Size = Bool and UDim2.new(1, 0, 0, Options.Size) or UDim2.new(1, 0, 0, -10),
+                })
+            end
+        end
+        --
+        if Options.Hidden then
+            PreviewGrid.Visible = false
+        end
+        --
+        return Grid
+    end
+    --
     function Library:Button(Options)
         Options = Library:Validate({
             Name = "Preview Button",
@@ -6877,6 +7282,33 @@ do -- Library
                 })
                 --
                 return TextBox
+            end
+            --
+            function Sections:ModelGrid(Options)
+                Options = Library:Validate({
+                    Size = 300,
+                    CellSize = UDim2.fromOffset(124, 136),
+                    Search = false,
+                    Hidden = false,
+                    SelectedColor = Color3.fromRGB(255, 170, 30),
+                    Flag = Library.NewFlag(),
+                    Callback = function() end,
+                    RightClick = function() end,
+                }, Options or {})
+                --
+                local Grid = Library:ModelGrid({
+                    Size = Options.Size,
+                    CellSize = Options.CellSize,
+                    Search = Options.Search,
+                    Hidden = Options.Hidden,
+                    SelectedColor = Options.SelectedColor,
+                    Parent = self.Elements.ContentHolder,
+                    Flag = Options.Flag,
+                    Callback = Options.Callback,
+                    RightClick = Options.RightClick,
+                })
+                --
+                return Grid
             end
             --
             function Sections:Button(Options)
