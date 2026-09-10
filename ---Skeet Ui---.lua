@@ -195,9 +195,9 @@ do -- Library
     -- ==================== 3D 模型视口（ModelGrid / 皮肤选择器使用，悬停转盘共享单连接） ====================
     do
         local SkinsLib = nil
-        local SkinsLibTried = false
         local Turntable = setmetatable({}, {__mode = "k"})
         local RenderConn = nil
+        local Diag = {}
 
         local function ensureTurntable()
             if RenderConn then return end
@@ -210,54 +210,98 @@ do -- Library
             end)
         end
 
+        local function getSkinsLib()
+            if SkinsLib then return SkinsLib end
+            pcall(function()
+                SkinsLib = require(game:GetService("ReplicatedStorage").Database.Components.Libraries.Skins)
+            end)
+            return SkinsLib
+        end
+
+        local function diagOnce(key, msg)
+            if not Diag[key] then
+                Diag[key] = true
+                warn("[NERX][Viewport] " .. msg)
+            end
+        end
+
         function Library:CreateModelViewport(ViewportFrame, Opts)
             Opts = Opts or {}
             local handle = { Hovered = false }
+            local lib = getSkinsLib()
 
-            if not SkinsLibTried then
-                SkinsLibTried = true
-                pcall(function()
-                    SkinsLib = require(game:GetService("ReplicatedStorage").Database.Components.Libraries.Skins)
-                end)
+            -- 官方 2D 皮肤图标（3D 取不到时的可靠兜底）
+            local function showIcon(iconId)
+                if not iconId or iconId == "" then return false end
+                local img = Instance.new("ImageLabel")
+                img.BackgroundTransparency = 1
+                img.AnchorPoint = Vector2.new(0.5, 0.5)
+                img.Position = UDim2.new(0.5, 0, 0.46, 0)
+                img.Size = UDim2.new(0.86, 0, 0.86, 0)
+                img.Image = iconId
+                img.ScaleType = Enum.ScaleType.Fit
+                img.ZIndex = 6
+                img.Parent = ViewportFrame
+                return true
             end
 
             local clone
-            if SkinsLib and Opts.Model and Opts.Model ~= "" then
+            if lib and Opts.Model and Opts.Model ~= "" then
                 local tries = {}
-                if Opts.Skin and Opts.Skin ~= "Random" and Opts.Skin ~= "Special" and Opts.Skin ~= "Default" then
+                if Opts.Skin and Opts.Skin ~= "" and Opts.Skin ~= "Random" and Opts.Skin ~= "Special" and Opts.Skin ~= "Default" then
                     table.insert(tries, Opts.Skin)
                 end
                 table.insert(tries, "Stock")
                 table.insert(tries, "Vanilla")
                 for _, s in ipairs(tries) do
                     local model
-                    local ok = pcall(function()
-                        model = SkinsLib.GetCharacterModel(Opts.Model, s, Opts.Wear or 0.001)
+                    local ok, err = pcall(function()
+                        if Opts.Type == "gloves" then
+                            model = lib.GetGloves(Opts.Model, s, Opts.Wear or 0.99)
+                        else
+                            model = lib.GetCharacterModel(Opts.Model, s, Opts.Wear or 0.001)
+                        end
                     end)
                     if ok and model then
                         local okClone, c = pcall(function() return model:Clone() end)
-                        if okClone and c then clone = c end
-                        if clone then break end
+                        clone = (okClone and c) or model
+                        break
+                    elseif not ok then
+                        diagOnce(Opts.Model .. "|" .. s, ("取模型失败 %s/%s: %s"):format(Opts.Model, s, tostring(err)))
                     end
                 end
+                if not clone then
+                    diagOnce(Opts.Model, ("模型不可用: %s (skin=%s)"):format(Opts.Model, tostring(Opts.Skin)))
+                end
+            elseif not lib then
+                diagOnce("nolib", "Skins 库 require 失败，全部使用图标预览")
             end
 
             if not clone then
-                if Opts.FallbackIcon then
-                    local img = Instance.new("ImageLabel")
-                    img.BackgroundTransparency = 1
-                    img.AnchorPoint = Vector2.new(0.5, 0.5)
-                    img.Position = UDim2.new(0.5, 0, 0.46, 0)
-                    img.Size = UDim2.new(0.72, 0, 0.72, 0)
-                    img.Image = Opts.FallbackIcon
-                    img.ScaleType = Enum.ScaleType.Fit
-                    img.ZIndex = 6
-                    img.Parent = ViewportFrame
+                local usedIcon = false
+                if lib and Opts.Model and Opts.Skin and Opts.Skin ~= "Default" then
+                    pcall(function()
+                        local info = lib.GetSkinInformation(Opts.Model, Opts.Skin)
+                        if info then
+                            if lib.GetWearImageForFloat then
+                                usedIcon = showIcon(lib.GetWearImageForFloat(info, Opts.Wear or 0.99))
+                            end
+                            if not usedIcon and info.imageAssetId then
+                                usedIcon = showIcon(info.imageAssetId)
+                            end
+                        end
+                    end)
                 end
+                if not usedIcon then showIcon(Opts.FallbackIcon) end
                 handle.SetHover = function() end
                 return handle
             end
 
+            pcall(function()
+                for _, d in ipairs(clone:GetDescendants()) do
+                    if d:IsA("BasePart") then d.Anchored = true end
+                end
+            end)
             clone.Parent = ViewportFrame
 
             local cf, sz = clone:GetBoundingBox()
@@ -4748,6 +4792,10 @@ do -- Library
             Strokes = {},
             Hiding = false,
         }
+        Grid._specs = {}
+        Grid._handles = {}
+        Grid._subLabels = {}
+        Grid._viewports = {}
         Library.Flags[Options.Flag] = Grid
         --
         local PreviewGrid = Library:CreateObject("Frame", {
@@ -4836,16 +4884,6 @@ do -- Library
             Parent = GridScrolling,
         })
         --
-        -- 分帧懒加载队列（所有 ModelGrid 共享，避免一次创建大量 Viewport 卡顿）
-        if not Library._ModelGridQueue then
-            Library._ModelGridQueue = {}
-            game:GetService("RunService").Heartbeat:Connect(function()
-                local job = table.remove(Library._ModelGridQueue, 1)
-                if job then task.spawn(job) end
-            end)
-        end
-        local viewportQueue = Library._ModelGridQueue
-        --
         local layoutOrder = 0
         --
         do -- Functions
@@ -4905,12 +4943,13 @@ do -- Library
                 stroke.Parent = cell
                 --
                 local viewport = Instance.new("ViewportFrame")
-                viewport.BackgroundColor3 = Color3.fromRGB(14, 14, 14)
+                viewport.BackgroundTransparency = 1
                 viewport.BorderSizePixel = 0
                 viewport.Position = UDim2.new(0, 3, 0, 3)
                 viewport.Size = UDim2.new(1, -6, 1, -38)
                 viewport.ZIndex = 5
                 viewport.Parent = cell
+                Grid._viewports[name] = viewport
                 --
                 local bottom = Instance.new("Frame")
                 bottom.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
@@ -4922,6 +4961,7 @@ do -- Library
                 bottom.Parent = cell
                 --
                 local title = Instance.new("TextLabel")
+                title.Name = "InfoBar"
                 title.BackgroundTransparency = 1
                 title.FontFace = Library.UI.NewFont
                 title.Text = name
@@ -4947,8 +4987,9 @@ do -- Library
                 subLabel.ZIndex = 7
                 subLabel.Parent = bottom
                 cell:SetAttribute("SubLabel", true)
-                Grid._subLabels = Grid._subLabels or {}
                 Grid._subLabels[name] = subLabel
+                --
+                Grid._specs[name] = Item
                 --
                 local button = Instance.new("TextButton")
                 button.BackgroundTransparency = 1
@@ -4958,32 +4999,80 @@ do -- Library
                 button.ZIndex = 8
                 button.Parent = cell
                 --
-                local viewHandle
-                table.insert(viewportQueue, function()
-                    if not cell.Parent then return end
+                -- 渲染 3D：视口需有实际尺寸（隐藏 Tab 中创建时等显示后再挂相机，否则可能永久黑屏）
+                task.spawn(function()
+                    local elapsed = 0
+                    while viewport.AbsoluteSize.Y < 2 do
+                        task.wait(0.1)
+                        elapsed += 0.1
+                        if not cell.Parent or elapsed > 10 then return end
+                    end
                     pcall(function()
-                        viewHandle = Library:CreateModelViewport(viewport, Item.Viewport or {})
+                        Grid._handles[name] = Library:CreateModelViewport(viewport, (Grid._specs[name] and Grid._specs[name].Viewport) or {})
                     end)
                 end)
                 --
                 Library:Connection(button.MouseButton1Click, function()
                     if Library.UI.Faded then return end
                     Grid:SetSelected(name)
-                    Options.Callback(name, Item)
+                    Options.Callback(name, Grid._specs[name])
                 end, "ModelGrid Click")
                 Library:Connection(button.MouseButton2Click, function()
                     if Library.UI.Faded then return end
-                    Options.RightClick(name, Item)
+                    Options.RightClick(name, Grid._specs[name])
                 end, "ModelGrid RightClick")
                 Library:Connection(button.MouseEnter, function()
                     if Library.UI.Faded then return end
                     cell.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
-                    if viewHandle and viewHandle.SetHover then viewHandle:SetHover(true) end
+                    local h = Grid._handles[name]
+                    if h and h.SetHover then h:SetHover(true) end
                 end, "ModelGrid Enter")
                 Library:Connection(button.MouseLeave, function()
                     cell.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
-                    if viewHandle and viewHandle.SetHover then viewHandle:SetHover(false) end
+                    local h = Grid._handles[name]
+                    if h and h.SetHover then h:SetHover(false) end
                 end, "ModelGrid Leave")
+            end
+            --
+            -- 局部刷新卡片（装备皮肤后同步左网格的 3D/颜色/副标题）
+            function Grid:UpdateItem(name, Props)
+                local cell = Grid.Cells[name]
+                local spec = Grid._specs[name]
+                if not cell or not spec then return end
+                Props = Props or {}
+                if Props.Sub ~= nil then
+                    spec.Sub = Props.Sub
+                    if Grid._subLabels[name] then Grid._subLabels[name].Text = Props.Sub end
+                end
+                if Props.Viewport ~= nil then spec.Viewport = Props.Viewport end
+                local rarity = Props.RarityColor
+                if rarity then
+                    spec.RarityColor = rarity
+                    Grid.Strokes[name] = rarity
+                    local title = cell:FindFirstChild("InfoBar", true)
+                    if title then title.TextColor3 = rarity end
+                    if Grid.SelectedStroke then
+                        local cellStroke = cell:FindFirstChildOfClass("UIStroke")
+                        if not (cellStroke and cellStroke == Grid.SelectedStroke) then
+                            cellStroke.Color = rarity
+                        end
+                    else
+                        local cellStroke = cell:FindFirstChildOfClass("UIStroke")
+                        if cellStroke then cellStroke.Color = rarity end
+                    end
+                end
+                if Props.Viewport ~= nil then
+                    local vp = Grid._viewports[name]
+                    if vp then
+                        for _, ch in ipairs(vp:GetChildren()) do
+                            if ch:IsA("Camera") or ch:IsA("Model") or ch:IsA("ImageLabel") then ch:Destroy() end
+                        end
+                        Grid._handles[name] = nil
+                        pcall(function()
+                            Grid._handles[name] = Library:CreateModelViewport(vp, (Grid._specs[name] and Grid._specs[name].Viewport) or {})
+                        end)
+                    end
+                end
             end
             --
             function Grid:RemoveItem(name)
@@ -4991,9 +5080,14 @@ do -- Library
                 if cell then cell:Destroy() end
                 Grid.Cells[name] = nil
                 Grid.Strokes[name] = nil
+                Grid._specs[name] = nil
+                Grid._handles[name] = nil
+                Grid._subLabels[name] = nil
+                Grid._viewports[name] = nil
                 if Grid.CurrentValueName == name then
                     Grid.CurrentValueName = nil
                     Grid.SelectedStroke = nil
+                    Grid.SelectedRarity = nil
                 end
             end
             --
@@ -5003,8 +5097,13 @@ do -- Library
                 end
                 Grid.Cells = {}
                 Grid.Strokes = {}
+                Grid._specs = {}
+                Grid._handles = {}
+                Grid._subLabels = {}
+                Grid._viewports = {}
                 Grid.CurrentValueName = nil
                 Grid.SelectedStroke = nil
+                Grid.SelectedRarity = nil
                 layoutOrder = 0
             end
             --
