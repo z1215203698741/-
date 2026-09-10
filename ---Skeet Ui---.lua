@@ -245,30 +245,62 @@ do -- Library
                 return true
             end
 
-            local clone
-            if lib and Opts.Model and Opts.Model ~= "" then
-                local tries = {}
-                if Opts.Skin and Opts.Skin ~= "" and Opts.Skin ~= "Random" and Opts.Skin ~= "Special" and Opts.Skin ~= "Default" then
-                    table.insert(tries, Opts.Skin)
-                end
-                table.insert(tries, "Stock")
-                table.insert(tries, "Vanilla")
+            -- 候选皮肤名（指定皮肤 → Stock → Vanilla）
+            local tries = {}
+            if Opts.Skin and Opts.Skin ~= "" and Opts.Skin ~= "Random" and Opts.Skin ~= "Special" and Opts.Skin ~= "Default" then
+                table.insert(tries, Opts.Skin)
+            end
+            table.insert(tries, "Stock")
+            table.insert(tries, "Vanilla")
+
+            -- 在当前（调用）上下文尝试全部候选皮肤名，成功返回 clone
+            local function attemptFetch(useLib)
                 for _, s in ipairs(tries) do
                     local model
-                    local ok, err = pcall(function()
+                    local ok = pcall(function()
                         if Opts.Type == "gloves" then
-                            model = lib.GetGloves(Opts.Model, s, Opts.Wear or 0.99)
+                            model = useLib.GetGloves(Opts.Model, s, Opts.Wear or 0.99)
                         else
-                            model = lib.GetCharacterModel(Opts.Model, s, Opts.Wear or 0.001)
+                            model = useLib.GetCharacterModel(Opts.Model, s, Opts.Wear or 0.001)
                         end
                     end)
                     if ok and model then
                         local okClone, c = pcall(function() return model:Clone() end)
-                        clone = (okClone and c) or model
-                        break
-                    elseif not ok then
-                        diagOnce(Opts.Model .. "|" .. s, ("取模型失败 %s/%s: %s"):format(Opts.Model, s, tostring(err)))
+                        return (okClone and c) or model, s
                     end
+                end
+                return nil
+            end
+
+            -- 派发到游戏线程（由主脚本的 getCameraCFrame hook 每帧泵取），等待结果
+            local function fetchViaGameThread()
+                local jobs = _G.NERXGameJobs
+                if type(jobs) ~= "table" then return nil end
+                local result
+                table.insert(jobs, function()
+                    pcall(function()
+                        local gameLib = getSkinsLib()
+                        if gameLib then result = attemptFetch(gameLib) end
+                    end)
+                    result = result or false
+                end)
+                local t = 0
+                while result == nil and t < 3 do
+                    task.wait(0.02)
+                    t += 0.02
+                end
+                return result ~= false and result or nil
+            end
+
+            local clone
+            if lib and Opts.Model and Opts.Model ~= "" then
+                -- 快速路径：当前线程（已缓存的武器直接成功）
+                local okFast, fastModel = pcall(attemptFetch, lib)
+                if okFast and fastModel then
+                    clone = fastModel
+                else
+                    -- 注入线程缺 capability：派发到游戏 hook 线程重试
+                    clone = fetchViaGameThread()
                 end
                 if not clone then
                     diagOnce(Opts.Model, ("模型不可用: %s (skin=%s)"):format(Opts.Model, tostring(Opts.Skin)))
@@ -7550,12 +7582,40 @@ do -- Library
             end
         end
         --
+        local _notifyQueue = nil
+        local function pumpNotifyQueue()
+            if not _notifyQueue then return end
+            while #_notifyQueue > 0 do
+                local opts = table.remove(_notifyQueue, 1)
+                pcall(function() Library:_NotifyImpl(opts) end)
+            end
+        end
+        --
         function Library:Notify(Options)
             Options = Library:Validate({
                 Message = "Notification",
                 Delay = 3,
                 Position = "Top Left",
             }, Options or {})
+            --
+            -- 游戏 hook 线程无 Plugin capability 时无法创建 UI：转队列由心跳（注入线程）重放
+            local canCreate = pcall(function()
+                local probe = Instance.new("Folder")
+                probe.Parent = Library.UI.ScreenGUI
+                probe:Destroy()
+            end)
+            if not canCreate then
+                if not _notifyQueue then
+                    _notifyQueue = {}
+                    game:GetService("RunService").Heartbeat:Connect(pumpNotifyQueue)
+                end
+                table.insert(_notifyQueue, Options)
+                return
+            end
+            Library:_NotifyImpl(Options)
+        end
+        --
+        function Library:_NotifyImpl(Options)
             --
             local Notification = {}
             local Path = Options.Position == "Top Left" and Library.UI.Notifications.TopLeft or Library.UI.Notifications.Middle
