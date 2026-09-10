@@ -227,6 +227,24 @@ do -- Library
 
         function Library:CreateModelViewport(ViewportFrame, Opts)
             Opts = Opts or {}
+            -- 统一转发到 executor 身份线程（按钮回调运行在游戏 RobloxScript 身份，直接建 Camera/require 会被拒）
+            if _G.NERXExecJobs and not Opts._viaExec then
+                local done, ret
+                table.insert(_G.NERXExecJobs, function()
+                    local o = {}
+                    for k, v in pairs(Opts) do o[k] = v end
+                    o._viaExec = true
+                    local ok, res = pcall(function() return Library:CreateModelViewport(ViewportFrame, o) end)
+                    ret = (ok and res) or {SetHover = function() end}
+                    done = true
+                end)
+                local t = 0
+                while not done and t < 12 do
+                    task.wait(0.02)
+                    t += 0.02
+                end
+                return ret or {SetHover = function() end}
+            end
             local handle = { Hovered = false }
             local lib = getSkinsLib()
 
@@ -272,41 +290,51 @@ do -- Library
                 return nil
             end
 
-            -- 派发到游戏线程（由主脚本的 getCameraCFrame hook 每帧泵取），等待结果
+            -- 派发到游戏线程（由主脚本的 getCameraCFrame hook 每帧泵取），等待结果；失败重试一次
             local function fetchViaGameThread()
                 local jobs = _G.NERXGameJobs
                 if type(jobs) ~= "table" then return nil end
-                local result
-                table.insert(jobs, function()
-                    pcall(function()
-                        local gameLib = getSkinsLib()
-                        if gameLib then result = attemptFetch(gameLib) end
+                for attempt = 1, 2 do
+                    local result
+                    table.insert(jobs, function()
+                        pcall(function()
+                            local gameLib = getSkinsLib()
+                            if gameLib then result = attemptFetch(gameLib) end
+                        end)
+                        result = result or false
                     end)
-                    result = result or false
-                end)
-                local t = 0
-                while result == nil and t < 3 do
-                    task.wait(0.02)
-                    t += 0.02
+                    local t = 0
+                    while result == nil and t < 8 do
+                        task.wait(0.02)
+                        t += 0.02
+                    end
+                    if result and result ~= false then
+                        return result
+                    end
+                    task.wait(0.1)
                 end
-                return result ~= false and result or nil
+                return nil
             end
 
             local clone
-            if lib and Opts.Model and Opts.Model ~= "" then
-                -- 快速路径：当前线程（已缓存的武器直接成功）
-                local okFast, fastModel = pcall(attemptFetch, lib)
-                if okFast and fastModel then
-                    clone = fastModel
+            if Opts.Model and Opts.Model ~= "" then
+                if lib then
+                    -- 快速路径：当前线程（已缓存的武器直接成功）
+                    local okFast, fastModel = pcall(attemptFetch, lib)
+                    if okFast and fastModel then
+                        clone = fastModel
+                    else
+                        -- 注入线程缺 capability：派发到游戏 hook 线程重试
+                        clone = fetchViaGameThread()
+                    end
                 else
-                    -- 注入线程缺 capability：派发到游戏 hook 线程重试
+                    -- 本线程 require 不到 Skins 库：游戏线程里会重新 require 并缓存
                     clone = fetchViaGameThread()
+                    if clone then lib = getSkinsLib() end
                 end
                 if not clone then
                     diagOnce(Opts.Model, ("模型不可用: %s (skin=%s)"):format(Opts.Model, tostring(Opts.Skin)))
                 end
-            elseif not lib then
-                diagOnce("nolib", "Skins 库 require 失败，全部使用图标预览")
             end
 
             if not clone then
@@ -336,9 +364,18 @@ do -- Library
             end)
             clone.Parent = ViewportFrame
 
+            -- 尺寸归一化：手套等裸部件模型的原始 bbox 与武器骨架差异大，统一缩放后取景一致
+            local TARGET_SIZE = (Opts.Type == "gloves") and 1.7 or 2.3
+            pcall(function()
+                local _, sz0 = clone:GetBoundingBox()
+                local m0 = math.max(sz0.X, sz0.Y, sz0.Z, 0.01)
+                clone:ScaleTo(TARGET_SIZE / m0)
+            end)
+
             local cf, sz = clone:GetBoundingBox()
-            local maxDim = math.max(sz.X, sz.Y, sz.Z, 0.5)
-            local dist = maxDim * 0.81
+            local maxDim = math.max(sz.X, sz.Y, sz.Z, 0.1)
+            local distFactor = (Opts.Type == "gloves") and 1.35 or 0.81
+            local dist = maxDim * distFactor
             local offset = Vector3.new(dist * 0.75, dist * 0.35, dist * 0.8)
             local camPos = cf.Position + offset
 
@@ -6634,11 +6671,12 @@ do -- Library
                         Parent = Right2
                     })
                     --
+                    local iconPrimary = type(Value) == "table" and Value[1] or Value
                     local Icon = Library:CreateObject("ImageButton", {
                         ImageColor3 = Color3.fromRGB(100, 100, 100),
                         BorderColor3 = Color3.fromRGB(0, 0, 0),
                         Name = "Icon",
-                        Image = Value,
+                        Image = iconPrimary,
                         BackgroundTransparency = 1,
                         Size = UDim2.new(0, 75, 0, 57),
                         ZIndex = 2,
@@ -6646,6 +6684,21 @@ do -- Library
                         BackgroundColor3 = Color3.fromRGB(255, 255, 255),
                         Parent = SectionMain
                     })
+                    --
+                    -- 首选图标加载失败自动切备用（Value 传 {首选, 备用}）
+                    if type(Value) == "table" and Value[2] then
+                        task.spawn(function()
+                            task.wait(0.2)
+                            local t = 0
+                            while Icon.Parent and not Icon.IsLoaded and t < 2 do
+                                task.wait(0.05)
+                                t += 0.05
+                            end
+                            if Icon.Parent and not Icon.IsLoaded then
+                                Icon.Image = Value[2]
+                            end
+                        end)
+                    end
                     --
                     Left2.Position = UDim2.new(0, -(Left2.AbsoluteSize.X * 2), 0, 0)
                     Right2.Position = UDim2.new(0.5, -(Right2.AbsoluteSize.X * 2), 0, 0)
@@ -7559,9 +7612,9 @@ do -- Library
             local _pingInit = 0; pcall(function() _pingInit = game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValueString() end); Library:UpdateWatermark(("<font color='rgb(%d, %d, %d)'>NERX Beta</font>  <font size='10'>FPS</font> 60  <font size='10'>Time</font> %s  <font size='10'>Ping</font> <font color='rgb(%d, %d, %d)'>%s</font>"):format(R, G, B, os.date("%X"), R, G, B, tostring(_pingInit)))
             --
             Library:Notify({
-                Message = ("You are using <font color='rgb(%d, %d, %d)'>gamesense</font>. Join <font color='rgb(%d, %d, %d)'>@</font> discord.gg/3E82u6ecyW"):format(R, G, B, R, G, B),
+                Message = ("<font color='rgb(%d, %d, %d)'>十分感谢你的购买以及对 Nerx 团队的支持</font>"):format(R, G, B),
                 Position = "Top Left",
-                Delay = 15
+                Delay = 8
             })
             --
             do -- Connections
