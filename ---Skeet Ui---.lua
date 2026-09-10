@@ -195,12 +195,13 @@ do -- Library
         Library.Tweens[#Library.Tweens + 1] = Tween
     end
     --
-    -- ==================== 3D 模型视口（ModelGrid / 皮肤选择器使用，悬停转盘共享单连接） ====================
+    -- ==================== 3D 模型视口（双线程：游戏线程取模型 / executor 线程挂 GUI） ====================
     do
         local SkinsLib = nil
         local Turntable = setmetatable({}, {__mode = "k"})
         local RenderConn = nil
         local Diag = {}
+        local ExecJobs = {}
 
         local function ensureTurntable()
             if RenderConn then return end
@@ -228,14 +229,52 @@ do -- Library
             end
         end
 
-        function Library:CreateModelViewport(ViewportFrame, Opts)
-            Opts = Opts or {}
-            local handle = { Hovered = false }
+        -- executor 身份常驻工作线程（库代码在注入线程执行，task.spawn 保持注入身份）：
+        -- 所有 Camera / ImageLabel / 父级挂载只在这里做。
+        -- 游戏信号回调线程缺 Plugin capability，直接建 Instance 会报 lacking capability Plugin。
+        for _ = 1, 3 do
+            task.spawn(function()
+                while true do
+                    local job = table.remove(ExecJobs, 1)
+                    if job then
+                        local ok, err = pcall(job)
+                        if not ok then
+                            warn("[NERX][Viewport] 渲染任务失败: " .. tostring(err))
+                        end
+                    else
+                        task.wait()
+                    end
+                end
+            end)
+        end
+
+        -- 把 fn 派发到游戏身份线程（主脚本相机 hook 每帧泵 _G.NERXGameJobs）。
+        -- 只有游戏线程能 require 普通游戏 ModuleScript（Skins 库内部 GetWeaponProperties 依赖它）。
+        local function runOnGameThread(fn, timeout)
+            local q = _G.NERXGameJobs
+            if not q then
+                return nil, "game job queue unavailable"
+            end
+            local job = {fn = fn}
+            q[#q + 1] = job
+            local deadline = os.clock() + (timeout or 15)
+            while not job.done do
+                if os.clock() > deadline then
+                    return nil, "timeout"
+                end
+                task.wait(0.02)
+            end
+            if not job.ok then
+                return nil, tostring(job.result)
+            end
+            return job.result
+        end
+
+        local function buildViewport(ViewportFrame, Opts, handle)
             local lib = getSkinsLib()
 
-            -- 官方 2D 皮肤图标（3D 取不到时的可靠兜底）
             local function showIcon(iconId)
-                if not iconId or iconId == "" then return false end
+                if not iconId or iconId == "" or type(iconId) ~= "string" then return false end
                 local img = Instance.new("ImageLabel")
                 img.BackgroundTransparency = 1
                 img.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -248,7 +287,12 @@ do -- Library
                 return true
             end
 
-            -- 候选皮肤名（与 Seeto 一致：指定皮肤 → Stock → Vanilla → 知名通用皮肤兜底）
+            if not lib or not Opts.Model or Opts.Model == "" then
+                showIcon(Opts.FallbackIcon)
+                return
+            end
+
+            -- 候选皮肤名：指定皮肤 → Stock（游戏对任意武器/手套都能合成 Stock schema）→ Vanilla → 通用名兜底
             local tries = {}
             if Opts.Skin and Opts.Skin ~= "" and Opts.Skin ~= "Random" and Opts.Skin ~= "Special" and Opts.Skin ~= "Default" then
                 table.insert(tries, Opts.Skin)
@@ -263,53 +307,73 @@ do -- Library
                 table.insert(tries, "Lore")
             end
 
-            -- 直接在当前线程取模型（调用方保证是 executor 身份：初始渲染在 task.spawn 线程，点击回调在信号闭包）
-            -- 皮肤数据库可能增量加载：GetCharacterModel 内部只在缓存全空时 Wait 一次，
-            -- 所以这里整体重试，覆盖"缓存非空但该武器数据未到"的情况
-            local clone
-            if lib and Opts.Model and Opts.Model ~= "" then
-                for attempt = 1, 9 do
+            -- 1) 游戏线程取模型；模型取不到时顺带解析官方 2D 图标（同样依赖游戏身份 require）
+            local res, gErr = runOnGameThread(function()
+                local lastErr
+                for attempt = 1, 3 do
                     for _, s in ipairs(tries) do
-                        local ok, model = pcall(function()
+                        local ok, m = pcall(function()
                             if Opts.Type == "gloves" then
                                 return lib.GetGloves(Opts.Model, s, Opts.Wear or 0.99)
                             end
                             return lib.GetCharacterModel(Opts.Model, s, Opts.Wear or 0.001)
                         end)
-                        if ok and model then
-                            local okClone, c = pcall(function() return model:Clone() end)
-                            clone = (okClone and c) or model
-                            break
+                        if ok and m then
+                            return {model = m}
+                        end
+                        if not ok then
+                            lastErr = tostring(m)
                         end
                     end
-                    if clone then break end
-                    if attempt < 9 then task.wait(0.35) end
+                    if attempt < 3 then
+                        task.wait(0.25)
+                    end
                 end
-                if not clone then
-                    diagOnce(Opts.Model, ("模型不可用: %s (skin=%s)"):format(Opts.Model, tostring(Opts.Skin)))
-                end
-            elseif not lib then
-                diagOnce("nolib", "Skins 库 require 失败，全部使用图标预览")
-            end
-
-            if not clone then
-                local usedIcon = false
-                if lib and Opts.Model and Opts.Skin and Opts.Skin ~= "Default" then
+                local icon
+                if Opts.Skin and Opts.Skin ~= "Default" then
                     pcall(function()
                         local info = lib.GetSkinInformation(Opts.Model, Opts.Skin)
                         if info then
                             if lib.GetWearImageForFloat then
-                                usedIcon = showIcon(lib.GetWearImageForFloat(info, Opts.Wear or 0.99))
+                                icon = lib.GetWearImageForFloat(info, Opts.Wear or 0.99)
                             end
-                            if not usedIcon and info.imageAssetId then
-                                usedIcon = showIcon(info.imageAssetId)
+                            if not icon and info.imageAssetId then
+                                icon = info.imageAssetId
                             end
                         end
                     end)
                 end
-                if not usedIcon then showIcon(Opts.FallbackIcon) end
-                handle.SetHover = function() end
-                return handle
+                return {icon = icon, err = lastErr}
+            end, 15)
+
+            -- 卡片已被重建/销毁
+            if not ViewportFrame.Parent then
+                if res and res.model then
+                    pcall(function() res.model:Destroy() end)
+                end
+                return
+            end
+
+            local model = res and res.model
+            if not model then
+                diagOnce(Opts.Model .. "|" .. tostring(Opts.Skin),
+                    ("模型不可用: %s (skin=%s) %s"):format(Opts.Model, tostring(Opts.Skin),
+                        tostring((res and res.err) or gErr or "未知原因")))
+                local used = showIcon(res and res.icon)
+                if not used then
+                    showIcon(Opts.FallbackIcon)
+                end
+                return
+            end
+
+            -- 2) executor 线程完成克隆与挂载
+            local clone
+            local okClone, c = pcall(function() return model:Clone() end)
+            if okClone and c then
+                clone = c
+                pcall(function() model:Destroy() end)
+            else
+                clone = model
             end
 
             pcall(function()
@@ -319,19 +383,19 @@ do -- Library
             end)
             clone.Parent = ViewportFrame
 
-            local cf, sz = clone:GetBoundingBox()
             if Opts.Type == "gloves" then
-                -- 手套是散装部件模型，原始 bbox 与武器差异极大：先归一化尺寸再取景，避免贴脸特写
+                -- 手套是散装部件模型，bbox 与武器差异极大：先归一化尺寸再取景，避免贴脸特写
                 pcall(function()
                     local _, sz0 = clone:GetBoundingBox()
                     local m0 = math.max(sz0.X, sz0.Y, sz0.Z, 0.01)
                     clone:ScaleTo(1.7 / m0)
                 end)
-                cf, sz = clone:GetBoundingBox()
             end
+
+            local cf, sz = clone:GetBoundingBox()
             local maxDim = math.max(sz.X, sz.Y, sz.Z, 0.5)
-            -- 与 Seeto 一致的 0.81 取景；手套稍远一点显得更小
-            local dist = maxDim * ((Opts.Type == "gloves") and 1.05 or 0.81)
+            -- 手套取景更远一点，显得更小
+            local dist = maxDim * ((Opts.Type == "gloves") and 1.3 or 0.81)
             local offset = Vector3.new(dist * 0.75, dist * 0.35, dist * 0.8)
             local camPos = cf.Position + offset
 
@@ -361,6 +425,16 @@ do -- Library
 
             Turntable[handle] = true
             ensureTurntable()
+        end
+
+        function Library:CreateModelViewport(ViewportFrame, Opts)
+            Opts = Opts or {}
+            local handle = {Hovered = false}
+            -- 先占位，挂载完成后替换为真实实现（ModelGrid 悬停时可能立刻调用）
+            handle.SetHover = function() end
+            ExecJobs[#ExecJobs + 1] = function()
+                buildViewport(ViewportFrame, Opts, handle)
+            end
             return handle
         end
     end
