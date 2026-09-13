@@ -192,6 +192,22 @@ do -- Library
             return Library.UI._TouchCount > 0
         end
         --
+        -- 按钮点击统一入口（黑曜石方案）：
+        -- 手机上 MouseButton1Click 要求"按下到抬起无位移"，手指轻微滑动就丢事件——这就是
+        -- "开关/下拉框/玩家列表点不动"的根因。改为 InputBegan 按下即触发，与黑曜石一致；
+        -- PC 保持 MouseButton1Click 原语义
+        function Library:OnClick(Button, Callback)
+            if Library.IsMobile then
+                return Library:Connection(Button.InputBegan, function(Input)
+                    if Input.UserInputType == Enum.UserInputType.Touch and Input.UserInputState == Enum.UserInputState.Begin then
+                        Callback()
+                    end
+                end)
+            end
+            --
+            return Library:Connection(Button.MouseButton1Click, Callback)
+        end
+        --
         -- 维护触摸计数（不管 GameProcessed：按下即按住）
         UserInputService.InputBegan:Connect(function(Input)
             if Input.UserInputType == Enum.UserInputType.Touch and Input.UserInputState == Enum.UserInputState.Begin then
@@ -1929,7 +1945,7 @@ do -- Library
                     end
                     --
                     do -- Connections
-                        Library:Connection(Button_4.MouseButton1Click, function()
+                        Library:OnClick(Button_4, function()
                             ModeItem:Activate()
                         end)
                         --
@@ -2003,7 +2019,7 @@ do -- Library
                 ColorPicker:ToggleOtherFrame()
             end)
             --
-            Library:Connection(Button_9.MouseButton1Click, function()
+            Library:OnClick(Button_9, function()
                 ColorPicker:Toggle()
             end)
         end
@@ -2423,7 +2439,7 @@ do -- Library
                     end
                     --
                     do -- Connections
-                        Library:Connection(Button_4.MouseButton1Click, function()
+                        Library:OnClick(Button_4, function()
                             ModeItem:Activate()
                         end)
                         --
@@ -2519,7 +2535,7 @@ do -- Library
                 Keybind:ToggleFrame()
             end)
             --
-            Library:Connection(Button_4.MouseButton1Click, function()
+            Library:OnClick(Button_4, function()
                 -- 手机无右键：单击直接打开模式菜单（键盘绑定在手机上不可用）
                 if Library.IsMobile and Options.UseMode and not Keybind.SelectingKeybind then
                     Keybind:ToggleFrame()
@@ -2918,7 +2934,7 @@ do -- Library
                 end
                 --
                 do -- Connections
-                    Library:Connection(Button_4.MouseButton1Click, function()
+                    Library:OnClick(Button_4, function()
                         if MultiBox.Hiding then return end
                         --
                         Item:Toggle()
@@ -3046,7 +3062,7 @@ do -- Library
         end
         --
         do -- Connections
-            Library:Connection(Button_44.MouseButton1Click, function()
+            Library:OnClick(Button_44, function()
                 if MultiBox.Hiding then return end
                 --
                 MultiBox:Toggle()
@@ -3380,7 +3396,7 @@ do -- Library
                 end
                 --
                 do -- Connections
-                    Library:Connection(Button_4.MouseButton1Click, function()
+                    Library:OnClick(Button_4, function()
                         if Dropdown.Hiding then return end
                         --
                         Item:Activate()
@@ -3511,7 +3527,7 @@ do -- Library
         end
         --
         do -- Connections
-            Library:Connection(Button_44.MouseButton1Click, function()
+            Library:OnClick(Button_44, function()
                 if Dropdown.Hiding then return end
                 --
                 Dropdown:Toggle()
@@ -3874,13 +3890,13 @@ do -- Library
                 Library:TweenObject(SliderBack, TweenInfo.new(Library.UI.TweenSpeed, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {BackgroundColor3 = Color3.fromRGB(205, 205, 205)})
             end)
             --
-            Library:Connection(MinusActualButton.MouseButton1Click, function()
+            Library:OnClick(MinusActualButton, function()
                 if Library.UI.Faded then return end
                 --
                 Slider:Set(Slider.CurrentValue - Options.Decimal)
             end)
             --
-            Library:Connection(AddActualButton.MouseButton1Click, function()
+            Library:OnClick(AddActualButton, function()
                 if Library.UI.Faded then return end
                 --
                 Slider:Set(Slider.CurrentValue + Options.Decimal)
@@ -4224,7 +4240,7 @@ do -- Library
                 Library:TweenObject(ToggleInline, TweenInfo.new(Library.UI.TweenSpeed, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {BackgroundColor3 = Color3.fromRGB(227, 227, 227)})
             end)
             --
-            Library:Connection(Button_9.MouseButton1Click, function()
+            Library:OnClick(Button_9, function()
                 if Library.UI.Faded then return end
                 --
                 if Toggle.Hiding then return end
@@ -4855,7 +4871,7 @@ do -- Library
                         end
                     end)
                     --
-                    Library:Connection(Button_912.MouseButton1Click, function()
+                    Library:OnClick(Button_912, function()
                         if Library.UI.Faded then return end
                         --
                         ListValue:Activate()
@@ -4921,7 +4937,7 @@ do -- Library
                 List:UpdateSection()
             end)
             --
-            Library:Connection(UpArrow.MouseButton1Click, function()
+            Library:OnClick(UpArrow, function()
                 if Library.UI.Faded then return end
                 --
                 if not UpArrow.Visible then return end
@@ -4929,7 +4945,7 @@ do -- Library
                 Library:TweenObject(ListScrolling, TweenInfo.new(Library.UI.TweenSpeed, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {CanvasPosition = Vector2.new(0, 0)})
             end)
             --
-            Library:Connection(DownArrow.MouseButton1Click, function()
+            Library:OnClick(DownArrow, function()
                 if Library.UI.Faded then return end
                 --
                 if not DownArrow.Visible then return end
@@ -5184,7 +5200,7 @@ do -- Library
                     end)
                 end)
                 --
-                Library:Connection(button.MouseButton1Click, function()
+                Library:OnClick(button, function()
                     if Library.UI.Faded then return end
                     Grid:SetSelected(name)
                     -- 用户回调在游戏信号线程触发，统一派发到注入身份线程（可建 Instance / 调外部逻辑）
@@ -5695,13 +5711,18 @@ do -- Library
             Parent = SideBarMain
         })
         --
-        local Holder = Library:CreateObject("Frame", {
+        local Holder = Library:CreateObject("ScrollingFrame", {
             BackgroundTransparency = 1,
             Name = "Holder",
             BorderColor3 = Color3.fromRGB(0, 0, 0),
             Size = UDim2.new(1, 0, 1, 0),
             BorderSizePixel = 0,
             BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+            -- Tabs 滑轨：手机 tab 超出侧栏高度时可以上下滑动（滚动条隐藏，纯触摸/滚轮滚动）
+            ScrollBarThickness = 0,
+            ScrollingDirection = Enum.ScrollingDirection.Y,
+            CanvasSize = UDim2.new(0, 0, 0, 0),
+            ElasticBehavior = Enum.ElasticBehavior.WhenScrollable,
             Parent = SideBarMain
         })
         --
@@ -5710,6 +5731,11 @@ do -- Library
             SortOrder = Enum.SortOrder.LayoutOrder,
             Parent = Holder
         })
+        --
+        -- 内容高度变化（增删 Tab）时自动扩展滚动范围
+        Library:Connection(UIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"), function()
+            Holder.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y)
+        end)
         --
         local UIPadding = Library:CreateObject("UIPadding", {
             PaddingTop = UDim.new(0, 10),
@@ -6221,7 +6247,7 @@ do -- Library
                     end
                 end)
                 --
-                Library:Connection(Button.MouseButton1Click, function()
+                Library:OnClick(Button, function()
                     Tab:Activate()
                 end)
                 --
@@ -6597,7 +6623,7 @@ do -- Library
                                 Section.Hovering = false
                             end)
                             --
-                            Library:Connection(Button_945.MouseButton1Click, function()
+                            Library:OnClick(Button_945, function()
                                 Section:CalculateHeight(SectionOutline, SectionScrolling)
                                 Library:Fade(false, Library:GetObjectsTable(ButtonOutline, true), ButtonOutline, 0.1)
                                 --
@@ -6664,13 +6690,13 @@ do -- Library
                         DownArrow.Visible = not Section:CheckArrows("Down")
                     end)
                     --
-                    Library:Connection(UpArrow.MouseButton1Click, function()
+                    Library:OnClick(UpArrow, function()
                         if not UpArrow.Visible then return end
                         --
                         Library:TweenObject(SectionScrolling, TweenInfo.new(Library.UI.TweenSpeed, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {CanvasPosition = Vector2.new(0, 0)})
                     end)
                     --
-                    Library:Connection(DownArrow.MouseButton1Click, function()
+                    Library:OnClick(DownArrow, function()
                         if not DownArrow.Visible then return end
                         --
                         Library:TweenObject(SectionScrolling, TweenInfo.new(Library.UI.TweenSpeed, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {CanvasPosition = Vector2.new(0, SectionScrolling.AbsoluteCanvasSize.Y - SectionScrolling.AbsoluteSize.Y)})
@@ -7094,7 +7120,7 @@ do -- Library
                             end
                         end)
                         --
-                        Library:Connection(Icon.MouseButton1Click, function()
+                        Library:OnClick(Icon, function()
                             SectionItem:Activate()
                         end)
                         --
@@ -7467,7 +7493,7 @@ do -- Library
                             IconButton.ImageColor3 = Color3.fromRGB(124, 124, 124)
                         end)
                         --
-                        Library:Connection(Button_925.MouseButton1Click, function()
+                        Library:OnClick(Button_925, function()
                             DropdownOption:Activate()
                             ActualToggleButton:Set(DropdownOption.CurrentValue)
                         end)
@@ -7555,7 +7581,7 @@ do -- Library
                 end
                 --
                 do -- Connections
-                    Library:Connection(Button_92.MouseButton1Click, function()
+                    Library:OnClick(Button_92, function()
                         ImageDropdown:Toggle()
                     end)
                 end
