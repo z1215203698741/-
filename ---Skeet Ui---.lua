@@ -228,7 +228,6 @@ do -- Library
                     if Now - LastFire < 0.3 then return end
                     LastFire = Now
                     --
-                    print("[NERX-UI] 按钮触发成功") -- 诊断：手机上点按钮看执行器日志是否输出
                     Callback()
                 end
                 --
@@ -840,10 +839,19 @@ do -- Library
     end
     --
     function Library:ViewPlayer(Player)
+        -- 角色模型可能没有 Humanoid（游戏自定义角色/死亡/加载中），必须容错否则报错中断
         if not Library.UI.Viewing then
-            Camera.CameraSubject = Player.Character.Humanoid
+            local Char = Player and Player.Character
+            local Humanoid = Char and Char:FindFirstChildOfClass("Humanoid")
+            if not Humanoid then return end
+            --
+            Camera.CameraSubject = Humanoid
         else
-            Camera.CameraSubject = Client.Character.Humanoid
+            local Char = Client.Character
+            local Humanoid = Char and Char:FindFirstChildOfClass("Humanoid")
+            if not Humanoid then return end
+            --
+            Camera.CameraSubject = Humanoid
         end
         --
         Library.UI.Viewing = not Library.UI.Viewing
@@ -3347,7 +3355,7 @@ do -- Library
             Parent = Library.UI.ScreenGUI
         })
         --
-        local DropdownMain = Library:CreateObject("Frame", {
+        local DropdownMain = Library:CreateObject("ScrollingFrame", {
             Name = "DropdownMain",
             Position = UDim2.new(0, 1, 0, 1),
             BorderColor3 = Color3.fromRGB(0, 0, 0),
@@ -3355,6 +3363,11 @@ do -- Library
             BorderSizePixel = 0,
             ZIndex = 10,
             ClipsDescendants = true,
+            -- 选项过多时可滚动（手机友好）：隐藏滚动条，触摸直接滑动
+            ScrollBarThickness = 3,
+            ScrollBarImageColor3 = Color3.fromRGB(65, 65, 65),
+            CanvasSize = UDim2.new(0, 0, 0, 0),
+            AutomaticCanvasSize = Enum.AutomaticSize.Y,
             BackgroundColor3 = Color3.fromRGB(35, 35, 35),
             Parent = DropdownMainOutline
         })
@@ -3529,11 +3542,11 @@ do -- Library
                     --
                     if Fast then
                         Library:Fade(true, Library:GetObjectsTable(DropdownMainOutline, true), DropdownMainOutline, 0)
-                        DropdownMainOutline.Size = UDim2.new(0, DropdownOutline_5.AbsoluteSize.X, 0, (#Options.Content * 20) + 2)
+                        DropdownMainOutline.Size = UDim2.new(0, DropdownOutline_5.AbsoluteSize.X, 0, math.min(#Options.Content * 20 + 2, Camera.ViewportSize.Y - 80))
                     else
                         Library:Fade(true, Library:GetObjectsTable(DropdownMainOutline, true), DropdownMainOutline, 0.1)
-                        Library:TweenObject(DropdownMainOutline, TweenInfo.new(Library.UI.TweenSpeed, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = UDim2.new(0, DropdownOutline_5.AbsoluteSize.X, 0, (#Options.Content * 20) + 2)})
-                    end	
+                        Library:TweenObject(DropdownMainOutline, TweenInfo.new(Library.UI.TweenSpeed, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = UDim2.new(0, DropdownOutline_5.AbsoluteSize.X, 0, math.min(#Options.Content * 20 + 2, Camera.ViewportSize.Y - 80))})
+                    end
                 end
                 --
                 Dropdown.Open = not Dropdown.Open
@@ -4956,6 +4969,18 @@ do -- Library
                         --
                         ListValue:Activate()
                     end)
+                    --
+                    -- 手机兜底：行 Frame 级触摸直接激活（按钮若被列表容器/层级问题挡住仍可选中）
+                    -- Activate 内部有 Active 幂等检查，与上面的按钮点击双触发无害
+                    if Library.IsMobile then
+                        Library:Connection(InactiveValue.InputBegan, function(Input)
+                            if Library.UI.Faded then return end
+                            --
+                            if Input.UserInputType == Enum.UserInputType.Touch and Input.UserInputState == Enum.UserInputState.Begin then
+                                ListValue:Activate()
+                            end
+                        end)
+                    end
                 end
             end
             --
@@ -8230,7 +8255,15 @@ do -- Library
         end
         --
         function Library:Unload()
-            Camera.CameraSubject = Client.Character.Humanoid
+            -- 恢复相机：角色模型可能没有 Humanoid，直接索引会 error 并中断整个卸载流程
+            -- （表现为"点卸载脚本没反应+左上角报错"）
+            pcall(function()
+                local Char = Client.Character
+                local Humanoid = Char and Char:FindFirstChildOfClass("Humanoid")
+                if Humanoid then
+                    Camera.CameraSubject = Humanoid
+                end
+            end)
             --
             for Index, Value in Library.Connections do
                 Value:Disconnect()
