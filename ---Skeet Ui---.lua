@@ -3886,14 +3886,13 @@ do -- Library
                 Slider:Set(Slider.CurrentValue + Options.Decimal)
             end)
             --
-            Library:Connection(Button_4.MouseButton1Down, function(Input)
+            Library:Connection(Button_4.MouseButton1Down, function(x, y)
                 if Library.UI.Faded then return end
                 --
                 Library.UI.DraggingGui = SliderDrag
                 Slider.MouseDown = true
-                -- 手机上 GetMouseLocation 不一定等于手指位置，优先用事件自带的坐标
-                local DownPos = Input and Input.Position and Vector2.new(Input.Position.X, Input.Position.Y) or UserInputService:GetMouseLocation()
-                SlideBar({Position = DownPos})
+                -- 注意：MouseButton1Down 回调参数是 (x, y) 数字，不是 InputObject（旧版当成 InputObject 取 .Position 直接报错）
+                SlideBar({Position = Vector2.new(typeof(x) == "number" and x or UserInputService:GetMouseLocation().X, 0)})
             end)
             --
             Library:Connection(SliderValue.FocusLost, function()
@@ -5791,6 +5790,20 @@ do -- Library
                 --
                 Outline.InputBegan:Connect(function(Input)
                     if Input.UserInputType == Enum.UserInputType.Touch and Input.UserInputState == Enum.UserInputState.Begin then
+                        -- 关键：只允许从空白区拖动。触摸点下有任何按钮/滚动区/Active 控件时直接放弃，
+                        -- 否则手指按按钮时的轻微滑动会拖走窗口，导致点击全部失效（"按钮按不动"的根因）
+                        local ok, GuiObjects = pcall(function()
+                            return UserInputService:GetGuiObjectsAtPosition(Input.Position.X, Input.Position.Y)
+                        end)
+                        --
+                        if ok and GuiObjects then
+                            for _, obj in ipairs(GuiObjects) do
+                                if obj:IsA("GuiButton") or obj:IsA("ScrollingFrame") or obj.Active then
+                                    return
+                                end
+                            end
+                        end
+                        --
                         DragStart = Vector2.new(Input.Position.X, Input.Position.Y)
                         FramePos = Vector2.new(Outline.Position.X.Offset, Outline.Position.Y.Offset)
                     end
@@ -5850,58 +5863,14 @@ do -- Library
                 Stroke.Parent = Fab
             end
             --
-            local FabPattern = Instance.new("ImageLabel")
-            FabPattern.Name = "FabPattern"
-            FabPattern.Image = "rbxassetid://8547666218"
-            FabPattern.ImageColor3 = Color3.fromRGB(12, 12, 12)
-            FabPattern.ScaleType = Enum.ScaleType.Tile
-            FabPattern.TileSize = UDim2.new(0, 8, 0, 8)
-            FabPattern.Size = UDim2.new(1, 0, 1, 0)
-            FabPattern.BackgroundTransparency = 1
-            FabPattern.ZIndex = 201
-            FabPattern.Parent = Fab
-            --
-            local FabGradient = Instance.new("Frame")
-            FabGradient.Name = "FabGradientBar"
-            FabGradient.AnchorPoint = Vector2.new(0.5, 0)
-            FabGradient.Position = UDim2.new(0.5, 0, 0, 3)
-            FabGradient.Size = UDim2.new(0.62, 0, 0, 3)
-            FabGradient.BorderSizePixel = 0
-            FabGradient.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-            FabGradient.ZIndex = 202
-            FabGradient.Parent = Fab
-            --
-            local FabGradientCorner = Instance.new("UICorner")
-            FabGradientCorner.CornerRadius = UDim.new(1, 0)
-            FabGradientCorner.Parent = FabGradient
-            --
-            local FabGradientImage = Instance.new("ImageLabel")
-            FabGradientImage.Image = "rbxassetid://8508019876"
-            FabGradientImage.BackgroundTransparency = 1
-            FabGradientImage.Size = UDim2.new(1, 0, 1, 0)
-            FabGradientImage.ZIndex = 203
-            FabGradientImage.Parent = FabGradient
-            --
-            local FabGrad = Instance.new("UIGradient")
-            FabGrad.Rotation = 90
-            FabGrad.Transparency = NumberSequence.new({
-                NumberSequenceKeypoint.new(0, 0),
-                NumberSequenceKeypoint.new(1, 0.55)
-            })
-            FabGrad.Color = ColorSequence.new({
-                ColorSequenceKeypoint.new(0, Color3.fromRGB(12, 12, 12)),
-                ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 0))
-            })
-            FabGrad.Parent = FabGradient
-            --
             local FabLabel = Instance.new("TextLabel")
             FabLabel.Name = "FabLabel"
             FabLabel.BackgroundTransparency = 1
             FabLabel.AnchorPoint = Vector2.new(0.5, 0.5)
-            FabLabel.Position = UDim2.new(0.5, 0, 0.5, 2)
+            FabLabel.Position = UDim2.new(0.5, 0, 0.5, 0)
             FabLabel.Size = UDim2.new(1, 0, 0, 18)
             FabLabel.Font = Enum.Font.GothamBold
-            FabLabel.Text = "GS"
+            FabLabel.Text = "NX"
             FabLabel.TextSize = 16
             FabLabel.TextColor3 = Library.Theme.Default.Accent
             FabLabel.ZIndex = 202
@@ -5962,7 +5931,6 @@ do -- Library
             -- 菜单显隐时同步球的外观：显示 = 收起样式（暗淡），隐藏 = 呼出样式（高亮呼吸感）
             Window.FloatingBallCallback = function(Visible)
                 Library:TweenObject(Fab, TweenInfo.new(0.2, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {BackgroundTransparency = Visible and 0.45 or 0})
-                Library:TweenObject(FabPattern, TweenInfo.new(0.2, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {ImageTransparency = Visible and 0.45 or 0})
                 Library:TweenObject(FabLabel, TweenInfo.new(0.2, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {TextTransparency = Visible and 0.35 or 0})
             end
         end
