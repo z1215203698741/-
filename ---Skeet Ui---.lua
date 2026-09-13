@@ -215,15 +215,27 @@ do -- Library
             return Library.UI._TouchCount > 0
         end
         --
-        -- 按钮点击统一入口（黑曜石方案）：
-        -- 手机上 MouseButton1Click 要求"按下到抬起无位移"，手指轻微滑动就丢事件——这就是
-        -- "开关/下拉框/玩家列表点不动"的根因。改为 InputBegan 按下即触发，与黑曜石一致；
-        -- PC 保持 MouseButton1Click 原语义
+        -- 按钮点击统一入口（手机双保险方案）：
+        -- 1) InputBegan 按下即触发（黑曜石语义）
+        -- 2) GuiButton.Activated = Roblox 官方跨平台点击事件（触摸按下+抬起即触发，
+        --    官方为移动端设计，容忍手指轻微位移）
+        -- 两者 0.3s 防抖窗口去重；PC 保持 MouseButton1Click 原语义
         function Library:OnClick(Button, Callback)
             if Library.IsMobile then
+                local LastFire = 0
+                local function SafeFire()
+                    local Now = os.clock()
+                    if Now - LastFire < 0.3 then return end
+                    LastFire = Now
+                    --
+                    print("[NERX-UI] 按钮触发成功") -- 诊断：手机上点按钮看执行器日志是否输出
+                    Callback()
+                end
+                --
+                Library:Connection(Button.Activated, SafeFire)
                 return Library:Connection(Button.InputBegan, function(Input)
                     if Input.UserInputType == Enum.UserInputType.Touch and Input.UserInputState == Enum.UserInputState.Begin then
-                        Callback()
+                        SafeFire()
                     end
                 end)
             end
@@ -326,6 +338,9 @@ do -- Library
                 pcall(function()
                     Library:Fade(true, Library:GetObjectsTable(Row), Row, 0.075)
                 end)
+                -- Fade 内部会把 Active 设为 true；行 Frame 吸收触摸会挡住内部按钮，
+                -- 必须在 Fade 之后强制还原为 false（触摸直达行内按钮/滑条/下拉框）
+                Row.Active = false
                 Row.Visible = true
                 Row.Size = UDim2.new(meta.Size.X.Scale, meta.Size.X.Offset, 0, 0)
                 Library:TweenObject(Row, TweenInfo.new(Library.UI.TweenSpeed, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = meta.Size})
@@ -662,7 +677,9 @@ do -- Library
                 -- Keybind 抢占 Toggle flag 的特殊情况（Keybind:Toggle 里 Flags[ToggleFlag] = Keybind）：
                 -- 此时 Get() 返回键位名，开关状态会丢——必须打包 {Key, State} 一起保存，
                 -- 否则所有带 ChangeToggle 热键的功能开关加载后永远不会恢复（"保存配置无效"的主因）
-                if Value.RegKeybind ~= nil and Value.Toggle ~= nil then
+                -- 注意：独立 Keybind 的 Value.Toggle 是方法（function），必须限定 typeof == "table"
+                -- （否则 "attempt to index function with 'State'"，保存直接失败）
+                if Value.RegKeybind ~= nil and typeof(Value.Toggle) == "table" then
                     Config[Index] = {Key = Got, State = Value.Toggle.State, Mode = Value.Mode}
                 elseif typeof(Got) == "table" and Got.Color and Got.Transparency then
                     local Transparency = Got.Transparency
