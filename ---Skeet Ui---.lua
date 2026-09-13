@@ -195,6 +195,48 @@ do -- Library
         Library.Tweens[#Library.Tweens + 1] = Tween
     end
     --
+
+    -- ==================== 可靠的行折叠/展开（带向下展开动画） ====================
+    -- 旧实现依赖 Objects 记账 + 负高度 hack，主开关关闭时设置项经常折叠失败。
+    -- 这里直接管理行的 Visible + 高度补间：显示 = 先 Visible 再从 0 长到原始高度（向下展开），
+    -- 隐藏 = 高度收到 0 后 Visible=false（UIListLayout 会跳过不可见行，布局立即回收）。
+    Library.__RowMeta = setmetatable({}, {__mode = "k"})
+    function Library:SetRowVisible(Row, Bool)
+        if typeof(Row) ~= "Instance" or not Row:IsA("GuiObject") then return end
+        local meta = Library.__RowMeta[Row]
+        if not meta then
+            meta = { Size = Row.Size, Hidden = not Row.Visible and true or false }
+            if Row.Visible then
+                meta.Hidden = false
+            end
+            Library.__RowMeta[Row] = meta
+        end
+        --
+        if Bool then
+            if meta.Hidden then
+                meta.Hidden = false
+                pcall(function()
+                    Library:Fade(true, Library:GetObjectsTable(Row), Row, 0.075)
+                end)
+                Row.Visible = true
+                Row.Size = UDim2.new(meta.Size.X.Scale, meta.Size.X.Offset, 0, 0)
+                Library:TweenObject(Row, TweenInfo.new(Library.UI.TweenSpeed, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = meta.Size})
+            end
+        else
+            if not meta.Hidden then
+                meta.Hidden = true
+                pcall(function()
+                    Library:Fade(false, Library:GetObjectsTable(Row), Row, 0.075)
+                end)
+                Library:TweenObject(Row, TweenInfo.new(Library.UI.TweenSpeed, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = UDim2.new(meta.Size.X.Scale, meta.Size.X.Offset, 0, 0)}, function()
+                    if Library.__RowMeta[Row] and Library.__RowMeta[Row].Hidden then
+                        Row.Visible = false
+                    end
+                end)
+            end
+        end
+    end
+    --
     -- ==================== 3D 模型视口（双线程：游戏线程取模型 / executor 线程挂 GUI） ====================
     do
         local SkinsLib = nil
@@ -1976,20 +2018,9 @@ do -- Library
         --
         do -- Functions
             function Keybind:SetVisible(Bool)
-                local OldValues = Library.Objects[KeybindObject]
-                --
                 Keybind.Hiding = not Bool
                 --
-                if Bool then
-                    Library.Objects[KeybindObject] = {KeybindObject, OldValues[2], true}
-                end
-                --
-                Library:Fade(Bool, Library:GetObjectsTable(KeybindObject), KeybindObject, 0.075)
-                Library:TweenObject(KeybindObject, TweenInfo.new(Library.UI.TweenSpeed, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = Bool and UDim2.new(1, 0, 0, 8) or UDim2.new(1, 0, 0, -10)}, function()
-                    if not Bool then
-                        Library.Objects[KeybindObject] = {KeybindObject, OldValues[2], false}
-                    end
-                end)
+                Library:SetRowVisible(KeybindObject, Bool)
             end
             --
             function Keybind:Set(Key)
@@ -2659,20 +2690,9 @@ do -- Library
             end
             --
             function MultiBox:SetVisible(Bool)
-                local OldValues = Library.Objects[PreviewMultiBox_5]
-                --
                 MultiBox.Hiding = not Bool
                 --
-                if Bool then
-                    Library.Objects[PreviewMultiBox_5] = {PreviewMultiBox_5, OldValues[2], true}
-                end
-                --
-                Library:Fade(Bool, Library:GetObjectsTable(PreviewMultiBox_5), PreviewMultiBox_5, 0.075)
-                Library:TweenObject(PreviewMultiBox_5, TweenInfo.new(Library.UI.TweenSpeed, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = Bool and (Options.Name == "" and UDim2.new(1, 0, 0, 20) or UDim2.new(1, 0, 0, 31)) or UDim2.new(1, 0, 0, -10)}, function()
-                    if not Bool then
-                        Library.Objects[PreviewMultiBox_5] = {PreviewMultiBox_5, OldValues[2], false}
-                    end
-                end)
+                Library:SetRowVisible(PreviewMultiBox_5, Bool)
             end
             --
             function MultiBox:AddValue(Value)
@@ -3176,23 +3196,14 @@ do -- Library
             end
             --
             function Dropdown:SetVisible(Bool)
-                local OldValues = Library.Objects[PreviewDropdown_5]
-                --
                 Dropdown.Hiding = not Bool
                 --
-                if Bool then
-                    Library.Objects[PreviewDropdown_5] = {PreviewDropdown_5, OldValues[2], true}
-                else
+                if not Bool then
                     if Dropdown.Open then Dropdown:Toggle(true) end
                     DropdownMainOutline.Visible = false
                 end
                 --
-                Library:Fade(Bool, Library:GetObjectsTable(PreviewDropdown_5), PreviewDropdown_5, 0.075)
-                Library:TweenObject(PreviewDropdown_5, TweenInfo.new(Library.UI.TweenSpeed, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = Bool and (Options.Name == "" and UDim2.new(1, 0, 0, 20) or UDim2.new(1, 0, 0, 31)) or UDim2.new(1, 0, 0, -10)}, function()
-                    if not Bool then
-                        Library.Objects[PreviewDropdown_5] = {PreviewDropdown_5, OldValues[2], false}
-                    end
-                end)
+                Library:SetRowVisible(PreviewDropdown_5, Bool)
             end
             --
             function Dropdown:AddValue(Value)
@@ -3745,21 +3756,11 @@ do -- Library
         end
         --
         function Slider:SetVisible(Bool)
-            local OldValues = Library.Objects[PreviewSlider]
-            --
             Slider.Hiding = not Bool
+            --
             SliderValue.Visible = Bool
             --
-            if Bool then
-                Library.Objects[PreviewSlider] = {PreviewSlider, OldValues[2], true}
-            end
-            --
-            Library:Fade(Bool, Library:GetObjectsTable(PreviewSlider), PreviewSlider, 0.075)
-            Library:TweenObject(PreviewSlider, TweenInfo.new(Library.UI.TweenSpeed, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = Bool and (Options.Name == "" and UDim2.new(1, 0, 0, 7) or UDim2.new(1, 0, 0, 20)) or UDim2.new(1, 0, 0, -10)}, function()
-                if not Bool then
-                    Library.Objects[PreviewSlider] = {PreviewSlider, OldValues[2], false}
-                end
-            end)
+            Library:SetRowVisible(PreviewSlider, Bool)
         end
         --
         local function SlideBar(Input)
@@ -4041,20 +4042,9 @@ do -- Library
             end
             --
             function Toggle:SetVisible(Bool)
-                local OldValues = Library.Objects[PreviewToggle]
-                --
                 Toggle.Hiding = not Bool
                 --
-                if Bool then
-                    Library.Objects[PreviewToggle] = {PreviewToggle, OldValues[2], true}
-                end
-                --
-                Library:Fade(Bool, Library:GetObjectsTable(PreviewToggle), PreviewToggle, 0.075)
-                Library:TweenObject(PreviewToggle, TweenInfo.new(Library.UI.TweenSpeed, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = Bool and UDim2.new(1, 0, 0, 8) or UDim2.new(1, 0, 0, -10)}, function()
-                    if not Bool then
-                        Library.Objects[PreviewToggle] = {PreviewToggle, OldValues[2], false}
-                    end
-                end)
+                Library:SetRowVisible(PreviewToggle, Bool)
             end
             --
             function Toggle:ColorPicker(Options)
@@ -4232,20 +4222,9 @@ do -- Library
             end
             --
             function Label:SetVisible(Bool)
-                local OldValues = Library.Objects[PreviewLabel]
-                --
                 Label.Hiding = not Bool
                 --
-                if Bool then
-                    Library.Objects[PreviewLabel] = {PreviewLabel, OldValues[2], true}
-                end
-                --
-                Library:Fade(Bool, Library:GetObjectsTable(PreviewLabel), PreviewLabel, 0.075)
-                Library:TweenObject(PreviewLabel, TweenInfo.new(Library.UI.TweenSpeed, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = Bool and UDim2.new(1, 0, 0, 8) or UDim2.new(1, 0, 0, -10)}, function()
-                    if not Bool then
-                        Library.Objects[PreviewLabel] = {PreviewLabel, OldValues[2], false}
-                    end
-                end)
+                Library:SetRowVisible(PreviewLabel, Bool)
             end
             --
             function Label:ColorPicker(Options)
@@ -4437,21 +4416,10 @@ do -- Library
         --
         do -- Functions
             function TextBox:SetVisible(Bool)
-                local OldValues = Library.Objects[PreviewTextBox]
-                --
                 TextBox.Hiding = not Bool
                 TextBoxObject.Visible = Bool
                 --
-                if Bool then
-                    Library.Objects[PreviewTextBox] = {PreviewTextBox, OldValues[2], true}
-                end
-                --
-                Library:Fade(Bool, Library:GetObjectsTable(PreviewTextBox), PreviewTextBox, 0.075)
-                Library:TweenObject(PreviewTextBox, TweenInfo.new(Library.UI.TweenSpeed, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = Bool and Options.Size or UDim2.new(1, 0, 0, -10)}, function()
-                    if not Bool then
-                        Library.Objects[PreviewTextBox] = {PreviewTextBox, OldValues[2], false}
-                    end
-                end)
+                Library:SetRowVisible(PreviewTextBox, Bool)
             end
             --
             function TextBox:Get()
@@ -4641,20 +4609,9 @@ do -- Library
             end
             --
             function List:SetVisible(Bool)
-                local OldValues = Library.Objects[PreviewList]
-                --
                 TextBox.Object.Visible = Bool
                 --
-                if Bool then
-                    Library.Objects[PreviewList] = {PreviewList, OldValues[2], true}
-                end
-                --
-                Library:Fade(Bool, Library:GetObjectsTable(PreviewList, false), PreviewList, 0.075)
-                Library:TweenObject(PreviewList, TweenInfo.new(Library.UI.TweenSpeed, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = Bool and UDim2.new(1, 0, 0, Options.Size) or UDim2.new(1, 0, 0, -10)}, function()
-                    if not Bool then
-                        Library.Objects[PreviewList] = {PreviewList, OldValues[2], false}
-                    end
-                end)
+                Library:SetRowVisible(PreviewList, Bool)
             end
             --
             function List:AddValue(Value, Icon)
@@ -5243,10 +5200,8 @@ do -- Library
             --
             function Grid:SetVisible(Bool)
                 Grid.Hiding = not Bool
-                PreviewGrid.Visible = Bool and true or false
-                Library:TweenObject(PreviewGrid, TweenInfo.new(Library.UI.TweenSpeed, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {
-                    Size = Bool and UDim2.new(1, 0, 0, Options.Size) or UDim2.new(1, 0, 0, -10),
-                })
+                --
+                Library:SetRowVisible(PreviewGrid, Bool)
             end
         end
         --
@@ -5369,20 +5324,9 @@ do -- Library
             end
             --
             function Button:SetVisible(Bool)
-                local OldValues = Library.Objects[PreviewButton]
-                --
                 Button.Hiding = not Bool
                 --
-                if Bool then
-                    Library.Objects[PreviewButton] = {PreviewButton, OldValues[2], true}
-                end
-                --
-                Library:Fade(Bool, Library:GetObjectsTable(PreviewButton), PreviewButton, 0.075)
-                Library:TweenObject(PreviewButton, TweenInfo.new(Library.UI.TweenSpeed, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = Bool and Options.Size or UDim2.new(1, 0, 0, -10)}, function()
-                    if not Bool then
-                        Library.Objects[PreviewButton] = {PreviewButton, OldValues[2], false}
-                    end
-                end)
+                Library:SetRowVisible(PreviewButton, Bool)
             end
             --
             function Button:ConfirmationStart()
