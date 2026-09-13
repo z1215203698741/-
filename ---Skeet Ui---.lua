@@ -137,6 +137,75 @@ do -- Library
         }
     }
     --
+    -- ==================== 移动端适配（参考黑曜石 UI 库） ====================
+    -- 黑曜石的核心做法：所有点击判定 = MouseButton1 或 Touch，所有移动判定 = MouseMovement 或 Touch。
+    -- 本库原来所有 InputBegan/Changed 只认鼠标类型，导致手机上拖动/缩放/滑条/色板全部失效。
+    do
+        local IsMobile = false
+        pcall(function()
+            local Platform = UserInputService:GetPlatform()
+            IsMobile = (Platform == Enum.Platform.Android or Platform == Enum.Platform.IOS)
+        end)
+        -- 兜底：有触摸没鼠标（部分模拟器 GetPlatform 可能失败）
+        if not IsMobile and UserInputService.TouchEnabled and not UserInputService.MouseEnabled then
+            IsMobile = true
+        end
+        --
+        Library.IsMobile = IsMobile
+        Library.UI._TouchCount = 0
+        --
+        -- 点击判定：鼠标左键 或 手指按下（含 Begin 状态校验）
+        function Library:IsClickInput(Input)
+            if not Input then return false end
+            --
+            local T = Input.UserInputType
+            if T ~= Enum.UserInputType.MouseButton1 and T ~= Enum.UserInputType.Touch then return false end
+            --
+            return Input.UserInputState == Enum.UserInputState.Begin
+        end
+        --
+        -- 移动判定：鼠标移动 或 手指拖动（含 Change 状态校验）
+        function Library:IsMoveInput(Input)
+            if not Input then return false end
+            --
+            local T = Input.UserInputType
+            if T ~= Enum.UserInputType.MouseMovement and T ~= Enum.UserInputType.Touch then return false end
+            --
+            return Input.UserInputState == Enum.UserInputState.Change
+        end
+        --
+        -- 释放判定：鼠标左键 或 手指抬起
+        function Library:IsReleaseInput(Input)
+            if not Input then return false end
+            --
+            local T = Input.UserInputType
+            if T ~= Enum.UserInputType.MouseButton1 and T ~= Enum.UserInputType.Touch then return false end
+            --
+            return Input.UserInputState == Enum.UserInputState.End or Input.UserInputState == Enum.UserInputState.Cancel
+        end
+        --
+        -- 当前是否有按下（鼠标或手指）。旧代码直接 IsMouseButtonPressed(MouseButton1)，
+        -- 触摸时永远 false，导致滑条/色板拖动第一帧就被取消
+        function Library:IsInputDown()
+            if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then return true end
+            --
+            return Library.UI._TouchCount > 0
+        end
+        --
+        -- 维护触摸计数（不管 GameProcessed：按下即按住）
+        UserInputService.InputBegan:Connect(function(Input)
+            if Input.UserInputType == Enum.UserInputType.Touch and Input.UserInputState == Enum.UserInputState.Begin then
+                Library.UI._TouchCount += 1
+            end
+        end)
+        --
+        UserInputService.InputEnded:Connect(function(Input)
+            if Input.UserInputType == Enum.UserInputType.Touch then
+                Library.UI._TouchCount = math.max(0, Library.UI._TouchCount - 1)
+            end
+        end)
+    end
+    --
     function Library:Validate(Defaults, Options)
         for Index, Value in Defaults do
             if Options[Index] == nil then
@@ -846,13 +915,15 @@ do -- Library
     --
     function Library:Resizable(Object, DragFrame, MinResize, MaxResize, Increments, UseIcon, UseParent, Delay)
         local StartingSize, ObjectSize, Dragging, MouseLocation, PerformanceDragUI, NewMouse, Hovering
+        -- 触摸设备上 GetMouseLocation 不一定跟随手指，改为跟踪最近一次输入位置
+        local CurrentInputPos
         --
         local function UpdateSize()
-            if not MouseLocation then return end
+            if not MouseLocation or not CurrentInputPos then return end
             --
             Library.UI.Resizing = true
             --
-            local CurrentMousePosition = UserInputService:GetMouseLocation()
+            local CurrentMousePosition = CurrentInputPos
             local Delta = CurrentMousePosition - MouseLocation
             local NewSizeX = StartingSize.X.Offset + Delta.X
             local NewSizeY = StartingSize.Y.Offset + Delta.Y
@@ -907,10 +978,19 @@ do -- Library
         end)
         --
         Library:Connection(DragFrame.InputBegan, function(Input)
-            if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+            if Library:IsClickInput(Input) then
                 Dragging = true
-                MouseLocation = UserInputService:GetMouseLocation()
+                MouseLocation = Vector2.new(Input.Position.X, Input.Position.Y)
+                CurrentInputPos = MouseLocation
                 StartingSize = Object.Size
+                --
+                Library.UI.Resizing = true
+            end
+        end)
+        --
+        Library:Connection(UserInputService.InputChanged, function(Input)
+            if Library:IsMoveInput(Input) then
+                CurrentInputPos = Vector2.new(Input.Position.X, Input.Position.Y)
             end
         end)
         --
@@ -949,7 +1029,7 @@ do -- Library
         end)
         --
         Library:Connection(UserInputService.InputEnded, function(Input)
-            if Input.UserInputType == Enum.UserInputType.MouseButton1 and Dragging then
+            if Library:IsReleaseInput(Input) and Dragging then
                 if NewMouse then NewMouse:Destroy() NewMouse = nil end
                 --
                 if UseParent then
@@ -1562,7 +1642,7 @@ do -- Library
                 --
                 do -- Connections
                     Library:Connection(Button_91.InputBegan, function(Input)
-                        if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        if Library:IsClickInput(Input) then
                             Library.UI.DraggingGui = MainPickerColor
                             --
                             local InputPosition = Vector2.new(Input.Position.X, Input.Position.Y)
@@ -1573,7 +1653,7 @@ do -- Library
                     end)
                     --
                     Library:Connection(Button_915241.InputBegan, function(Input)
-                        if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        if Library:IsClickInput(Input) then
                             Library.UI.DraggingGui = SaturationColor
                             --
                             local InputPosition = Vector2.new(Input.Position.X, Input.Position.Y)
@@ -1586,7 +1666,7 @@ do -- Library
                     end)
                     --
                     Library:Connection(Button_9141.InputBegan, function(Input)
-                        if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        if Library:IsClickInput(Input) then
                             Library.UI.DraggingGui = BackImage_2
                             --
                             local InputPosition = Vector2.new(Input.Position.X, Input.Position.Y)
@@ -1599,14 +1679,16 @@ do -- Library
                     Library:Connection(UserInputService.InputChanged, function(Input)
                         if (Library.UI.DraggingGui ~= SaturationColor and Library.UI.DraggingGui ~= MainPickerColor and Library.UI.DraggingGui ~= BackImage_2) then return end
                         --
-                        if not (UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)) then
+                        -- 触摸时 IsMouseButtonPressed 恒 false，改用统一按下判定（含触摸计数）
+                        if not (Library:IsInputDown()) then
                             Library.UI.DraggingGui = nil
                             return
                         end
                         --
                         local InputPosition = Vector2.new(Input.Position.X, Input.Position.Y)
                         --
-                        if (Input.UserInputType == Enum.UserInputType.MouseMovement) then
+                        -- MouseMovement 或 Touch（手指拖动色板）
+                        if Library:IsMoveInput(Input) then
                             if Library.UI.DraggingGui == MainPickerColor then
                                 local Percentage = (InputPosition - MainPickerColor.AbsolutePosition) / MainPickerColor.AbsoluteSize
                                 --
@@ -2438,6 +2520,12 @@ do -- Library
             end)
             --
             Library:Connection(Button_4.MouseButton1Click, function()
+                -- 手机无右键：单击直接打开模式菜单（键盘绑定在手机上不可用）
+                if Library.IsMobile and Options.UseMode and not Keybind.SelectingKeybind then
+                    Keybind:ToggleFrame()
+                    return
+                end
+                --
                 if Keybind.Connection then
                     Keybind.Connection:Disconnect()
                 end
@@ -2447,6 +2535,9 @@ do -- Library
                 Library:TweenObject(KeybindObject, TweenInfo.new(Library.UI.TweenSpeed, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {TextColor3 = Color3.fromRGB(255, 0, 0)})
                 --
                 Keybind.Connection = Library:Connection(UserInputService.InputBegan, function(Input)
+                    -- 触摸不参与键位绑定（手机上没有键盘，绑成 Touch 无意义还会破坏状态）
+                    if Input.UserInputType == Enum.UserInputType.Touch then return end
+                    --
                     Keybind:Set(Input.UserInputType == Enum.UserInputType.Keyboard and Input.KeyCode or Input.UserInputType)
                     --
                     if Keybind.Connection then
@@ -3795,12 +3886,14 @@ do -- Library
                 Slider:Set(Slider.CurrentValue + Options.Decimal)
             end)
             --
-            Library:Connection(Button_4.MouseButton1Down, function()
+            Library:Connection(Button_4.MouseButton1Down, function(Input)
                 if Library.UI.Faded then return end
                 --
                 Library.UI.DraggingGui = SliderDrag
                 Slider.MouseDown = true
-                SlideBar({Position = UserInputService:GetMouseLocation()})
+                -- 手机上 GetMouseLocation 不一定等于手指位置，优先用事件自带的坐标
+                local DownPos = Input and Input.Position and Vector2.new(Input.Position.X, Input.Position.Y) or UserInputService:GetMouseLocation()
+                SlideBar({Position = DownPos})
             end)
             --
             Library:Connection(SliderValue.FocusLost, function()
@@ -3816,17 +3909,19 @@ do -- Library
             Library:Connection(UserInputService.InputChanged, function(Input)
                 if Library.UI.Faded then return end
                 --
-                if Library.UI.DraggingGui ~= SliderDrag and not (UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)) then
+                -- 触摸时 IsMouseButtonPressed 恒 false，改用统一的按下判定（含触摸计数）
+                if Library.UI.DraggingGui ~= SliderDrag and not (Library:IsInputDown()) then
                     return
                 end
                 --
-                if Slider.MouseDown and Input.UserInputType == Enum.UserInputType.MouseMovement then
+                -- MouseMovement 或 Touch（手指拖动滑条）
+                if Slider.MouseDown and Library:IsMoveInput(Input) then
                     SlideBar(Input)
                 end
             end)
             --
             Library:Connection(UserInputService.InputEnded, function(Input)
-                if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+                if Library:IsReleaseInput(Input) then
                     Slider.MouseDown = false
                 end
             end)
@@ -5441,6 +5536,21 @@ do -- Library
             CloseBind = Enum.KeyCode.Insert,
         }, Options or {})
         --
+        -- 手机屏幕按比例缩放窗口：默认 700x612 超出手机宽度，导致 UI 异常庞大且无法完整查看
+        if Library.IsMobile then
+            local vw, vh = Viewport.X, Viewport.Y
+            local TargetW = math.clamp(vw * 0.92, 320, 700)
+            local TargetH = TargetW * 612 / 700
+            --
+            if TargetH > vh * 0.72 then
+                TargetH = vh * 0.72
+                TargetW = math.clamp(TargetH * 700 / 612, 300, vw * 0.92)
+            end
+            --
+            Options.Size = UDim2.fromOffset(math.floor(TargetW), math.floor(TargetH))
+            Options.MinResize = UDim2.fromOffset(280, 220)
+        end
+        --
         local Window = {
             Visible = true,
             CurrentTab = nil,
@@ -5635,6 +5745,11 @@ do -- Library
             Parent = Outline
         })
         --
+        -- 手机上 20px 的缩放热区手指点不准，放大热区（仍然透明不可见）
+        if Library.IsMobile then
+            ResizeButton.Size = UDim2.fromOffset(36, 36)
+        end
+        --
         do -- Functions
             function Window:SetTab(Number)
                 for Index, Tab in Window.Tabs do
@@ -5650,15 +5765,206 @@ do -- Library
         end
         --
         do -- Connections
+            -- 统一显隐入口：键盘 CloseBind 和手机悬浮球共用，保证悬浮球状态同步
+            local function ToggleMainWindow(State)
+                Window.Visible = State ~= nil and State or not Window.Visible
+                --
+                Library:Fade(Window.Visible, Library.Objects, Outline, 0.2)
+                --
+                if Window.FloatingBallCallback then
+                    Window.FloatingBallCallback(Window.Visible)
+                end
+            end
+            Window.ToggleMainWindow = ToggleMainWindow
+            --
             Library:Connection(UserInputService.InputBegan, function(Input)
                 if Input.KeyCode == Library.UI.CloseBind then
-                    Window.Visible = not Window.Visible
-                    --
-                    Library:Fade(Window.Visible, Library.Objects, Outline, 0.2)
+                    ToggleMainWindow()
                 end
             end)
             --
             Library:Resizable(Outline, ResizeButton, Options.MinResize, Options.MaxResize)
+            --
+            -- 触摸拖动窗口：内置 Draggable 只响应鼠标，手机上无效（黑曜石同款 InputBegan→InputChanged 增量法）
+            if Library.IsMobile then
+                local DragStart, FramePos
+                --
+                Outline.InputBegan:Connect(function(Input)
+                    if Input.UserInputType == Enum.UserInputType.Touch and Input.UserInputState == Enum.UserInputState.Begin then
+                        DragStart = Vector2.new(Input.Position.X, Input.Position.Y)
+                        FramePos = Vector2.new(Outline.Position.X.Offset, Outline.Position.Y.Offset)
+                    end
+                end)
+                --
+                Library:Connection(UserInputService.InputChanged, function(Input)
+                    if DragStart and Library:IsMoveInput(Input) and Input.UserInputType == Enum.UserInputType.Touch then
+                        -- 滑条/色板/缩放拖动进行中时不拖窗口，避免抢输入
+                        if Library.UI.DraggingGui or Library.UI.Resizing then
+                            DragStart = nil
+                            return
+                        end
+                        --
+                        local Delta = Vector2.new(Input.Position.X, Input.Position.Y) - DragStart
+                        Outline.Position = UDim2.fromOffset(FramePos.X + Delta.X, FramePos.Y + Delta.Y)
+                    end
+                end)
+                --
+                Library:Connection(UserInputService.InputEnded, function(Input)
+                    if Input.UserInputType == Enum.UserInputType.Touch then
+                        DragStart = nil
+                    end
+                end)
+            end
+        end
+        --
+        -- ==================== 手机悬浮开关球（显隐菜单的固定按钮） ====================
+        -- 手机没有键盘，Insert 之类 CloseBind 无法触发；做一个可拖动的圆形悬浮钮，
+        -- 风格对齐本 UI：深色底 + 三层描边 + 顶部渐变条 + Pattern 纹理 + 主题色
+        if Library.IsMobile then
+            local BallSize = 56
+            --
+            local Fab = Instance.new("TextButton")
+            Fab.Name = "MobileToggleFab"
+            Fab.AnchorPoint = Vector2.new(1, 1)
+            Fab.Position = UDim2.new(1, -14, 1, -78)
+            Fab.Size = UDim2.fromOffset(BallSize, BallSize)
+            Fab.BackgroundColor3 = Color3.fromRGB(12, 12, 12)
+            Fab.AutoButtonColor = false
+            Fab.BorderSizePixel = 0
+            Fab.Text = ""
+            Fab.ZIndex = 200
+            Fab.Parent = MainUI
+            --
+            local FabCorner = Instance.new("UICorner")
+            FabCorner.CornerRadius = UDim.new(1, 0)
+            FabCorner.Parent = Fab
+            --
+            -- 三层描边：还原窗口 Outline → Inline → Inner 的边框风格
+            for StrokeIndex, StrokeColor in ipairs({Color3.fromRGB(0, 0, 0), Color3.fromRGB(60, 60, 60), Color3.fromRGB(40, 40, 40)}) do
+                local Stroke = Instance.new("UIStroke")
+                Stroke.Name = "FabStroke" .. StrokeIndex
+                Stroke.Color = StrokeColor
+                Stroke.Thickness = 1
+                Stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+                Stroke.ZIndex = 200 + StrokeIndex
+                Stroke.Parent = Fab
+            end
+            --
+            local FabPattern = Instance.new("ImageLabel")
+            FabPattern.Name = "FabPattern"
+            FabPattern.Image = "rbxassetid://8547666218"
+            FabPattern.ImageColor3 = Color3.fromRGB(12, 12, 12)
+            FabPattern.ScaleType = Enum.ScaleType.Tile
+            FabPattern.TileSize = UDim2.new(0, 8, 0, 8)
+            FabPattern.Size = UDim2.new(1, 0, 1, 0)
+            FabPattern.BackgroundTransparency = 1
+            FabPattern.ZIndex = 201
+            FabPattern.Parent = Fab
+            --
+            local FabGradient = Instance.new("Frame")
+            FabGradient.Name = "FabGradientBar"
+            FabGradient.AnchorPoint = Vector2.new(0.5, 0)
+            FabGradient.Position = UDim2.new(0.5, 0, 0, 3)
+            FabGradient.Size = UDim2.new(0.62, 0, 0, 3)
+            FabGradient.BorderSizePixel = 0
+            FabGradient.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+            FabGradient.ZIndex = 202
+            FabGradient.Parent = Fab
+            --
+            local FabGradientCorner = Instance.new("UICorner")
+            FabGradientCorner.CornerRadius = UDim.new(1, 0)
+            FabGradientCorner.Parent = FabGradient
+            --
+            local FabGradientImage = Instance.new("ImageLabel")
+            FabGradientImage.Image = "rbxassetid://8508019876"
+            FabGradientImage.BackgroundTransparency = 1
+            FabGradientImage.Size = UDim2.new(1, 0, 1, 0)
+            FabGradientImage.ZIndex = 203
+            FabGradientImage.Parent = FabGradient
+            --
+            local FabGrad = Instance.new("UIGradient")
+            FabGrad.Rotation = 90
+            FabGrad.Transparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, 0),
+                NumberSequenceKeypoint.new(1, 0.55)
+            })
+            FabGrad.Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.fromRGB(12, 12, 12)),
+                ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 0))
+            })
+            FabGrad.Parent = FabGradient
+            --
+            local FabLabel = Instance.new("TextLabel")
+            FabLabel.Name = "FabLabel"
+            FabLabel.BackgroundTransparency = 1
+            FabLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+            FabLabel.Position = UDim2.new(0.5, 0, 0.5, 2)
+            FabLabel.Size = UDim2.new(1, 0, 0, 18)
+            FabLabel.Font = Enum.Font.GothamBold
+            FabLabel.Text = "GS"
+            FabLabel.TextSize = 16
+            FabLabel.TextColor3 = Library.Theme.Default.Accent
+            FabLabel.ZIndex = 202
+            FabLabel.Parent = Fab
+            --
+            -- 拖动 + 点击（阈值 8px：原地松手 = 点击切换菜单，拖动 = 移动球）
+            local PressStart, BallStartCenter, Moved = nil, nil, false
+            --
+            -- AnchorPoint (1,1)：Position offset 是"球右下角相对屏幕右下角"的负偏移
+            local function GetBallCenter()
+                local vx = Camera.ViewportSize
+                return Vector2.new(vx.X + Fab.Position.X.Offset - BallSize / 2, vx.Y + Fab.Position.Y.Offset - BallSize / 2)
+            end
+            --
+            local function SetBallCenter(Center)
+                local vx = Camera.ViewportSize
+                local cx = math.clamp(Center.X, BallSize / 2 + 4, vx.X - BallSize / 2 - 4)
+                local cy = math.clamp(Center.Y, BallSize / 2 + 4, vx.Y - BallSize / 2 - 4)
+                --
+                Fab.Position = UDim2.new(1, cx + BallSize / 2 - vx.X, 1, cy + BallSize / 2 - vx.Y)
+            end
+            --
+            Fab.InputBegan:Connect(function(Input)
+                if Input.UserInputType == Enum.UserInputType.Touch and Input.UserInputState == Enum.UserInputState.Begin then
+                    PressStart = Vector2.new(Input.Position.X, Input.Position.Y)
+                    BallStartCenter = GetBallCenter()
+                    Moved = false
+                end
+            end)
+            --
+            Library:Connection(UserInputService.InputChanged, function(Input)
+                if PressStart and Library:IsMoveInput(Input) and Input.UserInputType == Enum.UserInputType.Touch then
+                    local Delta = Vector2.new(Input.Position.X, Input.Position.Y) - PressStart
+                    --
+                    if not Moved and Delta.Magnitude > 8 then
+                        Moved = true
+                    end
+                    --
+                    if Moved then
+                        SetBallCenter(BallStartCenter + Delta)
+                    end
+                end
+            end)
+            --
+            Library:Connection(UserInputService.InputEnded, function(Input)
+                if Input.UserInputType == Enum.UserInputType.Touch and PressStart then
+                    local WasMoved = Moved
+                    PressStart, BallStart, Moved = nil, nil, false
+                    --
+                    if not WasMoved then
+                        if Window.ToggleMainWindow then
+                            Window.ToggleMainWindow()
+                        end
+                    end
+                end
+            end)
+            --
+            -- 菜单显隐时同步球的外观：显示 = 收起样式（暗淡），隐藏 = 呼出样式（高亮呼吸感）
+            Window.FloatingBallCallback = function(Visible)
+                Library:TweenObject(Fab, TweenInfo.new(0.2, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {BackgroundTransparency = Visible and 0.45 or 0})
+                Library:TweenObject(FabPattern, TweenInfo.new(0.2, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {ImageTransparency = Visible and 0.45 or 0})
+                Library:TweenObject(FabLabel, TweenInfo.new(0.2, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {TextTransparency = Visible and 0.35 or 0})
+            end
         end
         --
         function Window:CreateTab(Options)
@@ -6407,7 +6713,7 @@ do -- Library
                             Title.TextColor3 = Library.Theme.Default.Accent
                             --
                             Section.DragConnection = Library:Connection(UserInputService.InputChanged, function(Input)
-                                if Input.UserInputType == Enum.UserInputType.MouseMovement then
+                                if Library:IsMoveInput(Input) then
                                     local SelectedOptions = {["SubSection"] = Options.ParentOptions, ["Other"] = {Left, Right}}
                                     local Selected = Tab.SubSectionEnabled and "SubSection" or "Other"
                                     local NewLeft, NewRight = SelectedOptions[Selected][1], SelectedOptions[Selected][2]
@@ -6455,7 +6761,7 @@ do -- Library
                         end)
                         --
                         Library:Connection(UserInputService.InputBegan, function(Input)
-                            if Input.UserInputType == Enum.UserInputType.MouseButton1 and Section.SizeButton and not Section.Hovering then
+                            if Library:IsClickInput(Input) and Section.SizeButton and not Section.Hovering then
                                 Library:Fade(false, Library:GetObjectsTable(Section.SizeButton, true), Section.SizeButton, 0.1)
                                 --
                                 task.delay(Library.UI.TweenSpeed, function()
@@ -6473,7 +6779,7 @@ do -- Library
                     end
                     --
                     Library:Connection(UserInputService.InputEnded, function(Input)
-                        if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        if Library:IsReleaseInput(Input) then
                             if Section.DragConnection then Section.DragConnection:Disconnect() Section.DragConnection = nil end
                             Section.Left.Order = 1
                             Section.Right.Order = 1
