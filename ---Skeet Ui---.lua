@@ -22,6 +22,29 @@ local Camera = Workspace:FindFirstChildWhichIsA("Camera")
 local Viewport = Camera.ViewportSize
 --
 do -- Folders
+    -- 部分执行器（尤其手机端）的 isfolder/isfile/listfiles 会直接抛错而不是返回 false，
+    -- 统一包一层 pcall 兜底（黑曜石 SaveManager 同款处理），否则配置系统可能整体失效
+    local OldIsFolder, OldIsFile, OldListFiles = isfolder, isfile, listfiles
+    if type(OldIsFolder) == "function" then
+        isfolder = function(Path)
+            local Success, Result = pcall(OldIsFolder, Path)
+            return Success and Result == true
+        end
+    end
+    if type(OldIsFile) == "function" then
+        isfile = function(Path)
+            local Success, Result = pcall(OldIsFile, Path)
+            return Success and Result == true
+        end
+    end
+    if type(OldListFiles) == "function" then
+        listfiles = function(Path)
+            local Success, Result = pcall(OldListFiles, Path)
+            if Success and typeof(Result) == "table" then return Result end
+            return {}
+        end
+    end
+    --
     if not isfolder("gamesense") then
         makefolder("gamesense")
     end
@@ -244,20 +267,20 @@ do -- Library
             -- （信号回调本身支持 yield，Roblox 每次触发在独立线程中运行闭包）
             local Success, Message = pcall(function() return Func(unpack(Args)) end)
             --
-            if not Success and not Library.Errors[Message] then
-                if Library.Notify then
-                    Library:Notify({Message = ("[ERROR] | An error has occurred:\n%s\nName: %s"):format(Message, Name), Delay = math.huge})
-                else
-                    warn(("[ERROR] | An error has occurred:\n%s\nName: %s"):format(Message, Name))
+            -- 重要：回调报错绝不断开连接！
+            -- 旧逻辑 error 一次就永久 Disconnect——手机上功能回调只要报一次错（执行器缺 API 等），
+            -- 该控件就彻底点不动了（表现为"关闭了再开启就调不了""90%按钮没反应"）。
+            -- 现在只弹通知（同错误去重限频），控件保持可用
+            if not Success then
+                if not Library.Errors[Message] then
+                    Library.Errors[Message] = Message
+                    --
+                    if Library.Notify then
+                        Library:Notify({Message = ("[ERROR] | An error has occurred:\n%s\nName: %s"):format(Message, Name), Delay = 10})
+                    else
+                        warn(("[ERROR] | An error has occurred:\n%s\nName: %s"):format(Message, Name))
+                    end
                 end
-                --
-                Library.Errors[Message] = Message
-                --
-                if Table[Connection] then
-                    Table[Connection] = nil
-                end
-                --
-                return Connection and Connection:Disconnect()
             end
         end)
         --
@@ -634,14 +657,22 @@ do -- Library
         --
         for Index, Value in Library.Flags do
             if Value.Get and not string.find(Index, "_Status") then
-                if typeof(Value:Get()) == "table" and Value:Get().Color and Value:Get().Transparency then
-                    local Transparency = Value:Get().Transparency
-                    local Hue, Saturation, Value = Value:Get().Color:ToHSV()
+                local Got = Value:Get()
+                --
+                -- Keybind 抢占 Toggle flag 的特殊情况（Keybind:Toggle 里 Flags[ToggleFlag] = Keybind）：
+                -- 此时 Get() 返回键位名，开关状态会丢——必须打包 {Key, State} 一起保存，
+                -- 否则所有带 ChangeToggle 热键的功能开关加载后永远不会恢复（"保存配置无效"的主因）
+                if Value.RegKeybind ~= nil and Value.Toggle ~= nil then
+                    Config[Index] = {Key = Got, State = Value.Toggle.State, Mode = Value.Mode}
+                elseif typeof(Got) == "table" and Got.Color and Got.Transparency then
+                    local Transparency = Got.Transparency
+                    local Hue, Saturation, Val = Got.Color:ToHSV()
                     --
-                    Config[Index] = {Hue, Saturation, Value, Transparency}
-                else
-                    Config[Index] = Value:Get()
+                    Config[Index] = {Hue, Saturation, Val, Transparency}
+                elseif typeof(Got) == "boolean" or typeof(Got) == "number" or typeof(Got) == "string" or typeof(Got) == "table" then
+                    Config[Index] = Got
                 end
+                -- 其余类型（Enum 等）无法 JSON 序列化，直接跳过，避免整个保存报错
             end
         end
         --
@@ -714,12 +745,17 @@ do -- Library
     --
     function Library:UpdateConfigList(List, Type)
         for _, File in listfiles("gamesense/Configs") do
-            local FileName = File:gsub("\\", "/"):gsub("gamesense/Configs/", ""):gsub(".cfg", "")
+            -- 手机执行器 listfiles 返回的前缀/分隔符不统一：统一取最后一段文件名再剥后缀，
+            -- 避免 "gamesense/Configs/" 前缀不匹配时列表项变成全路径导致加载失败
+            local FileName = File:gsub("\\", "/"):match("[^/]+$")
+            FileName = FileName and FileName:gsub("%.cfg$", "") or ""
             --
-            if Type == "Remove" then
-                List:RemoveValue(FileName)
-            else
-                List:AddValue(FileName)
+            if FileName ~= "" then
+                if Type == "Remove" then
+                    List:RemoveValue(FileName)
+                else
+                    List:AddValue(FileName)
+                end
             end
         end
     end
@@ -2124,6 +2160,33 @@ do -- Library
             function Keybind:Set(Key)
                 if Keybind.Hiding then return end
                 if typeof(Key) == "boolean" then return end
+                --
+                -- 兼容 GetConfig 的保存格式 {Key = 键位, State = 开关状态, Mode = 触发模式}：
+                -- 恢复键位的同时把关联的功能开关状态、触发模式一并还原
+                if typeof(Key) == "table" and Key.Key ~= nil then
+                    local RestoreState = typeof(Key.State) == "boolean" and Key.State or nil
+                    local RestoreMode = typeof(Key.Mode) == "string" and Key.Mode or nil
+                    local RestoreToggle = Keybind.Toggle
+                    --
+                    Key = Key.Key
+                    --
+                    if RestoreState ~= nil and RestoreToggle and RestoreToggle.Set then
+                        task.defer(function()
+                            -- 先恢复触发模式再恢复开关状态，保证状态按新模式生效
+                            if RestoreMode and Keybind.SetMode then
+                                pcall(function() Keybind:SetMode(RestoreMode) end)
+                            end
+                            --
+                            if Keybind.Toggle and Keybind.Toggle.GetState and Keybind.Toggle:GetState() ~= RestoreState then
+                                if RestoreToggle.ToggleGUI then
+                                    Keybind:Toggle(RestoreState)
+                                else
+                                    RestoreToggle:Set(RestoreState)
+                                end
+                            end
+                        end)
+                    end
+                end
                 --
                 if typeof(Key) == "EnumItem" then
                     Keybind.RegKeybind = Key
