@@ -1,0 +1,181 @@
+{
+  "sha": "b3fd168e420d9053efe9c73bb8de63b3ce686122",
+  "url": "https://api.github.com/repos/euphonee/Seeto.SolutionZ-Bloxstrike/git/trees/b3fd168e420d9053efe9c73bb8de63b3ce686122",
+  "tree": [
+    {
+      "path": ".gitignore",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "bd7b6240182721edd8390311aad94405688861b9",
+      "size": 18,
+      "url": "https://api.github.com/repos/euphonee/Seeto.SolutionZ-Bloxstrike/git/blobs/bd7b6240182721edd8390311aad94405688861b9"
+    },
+    {
+      "path": "README.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "976b5f8440fea05a111d567aeca3d38c1a0084fc",
+      "size": 802,
+      "url": "https://api.github.com/repos/euphonee/Seeto.SolutionZ-Bloxstrike/git/blobs/976b5f8440fea05a111d567aeca3d38c1a0084fc"
+    },
+    {
+      "path": "assets",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "6e54c435543f701da1bb8130c98da30b7a81f74d",
+      "url": "https://api.github.com/repos/euphonee/Seeto.SolutionZ-Bloxstrike/git/trees/6e54c435543f701da1bb8130c98da30b7a81f74d"
+    },
+    {
+      "path": "assets/menu.png",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "efea893c034f93d8d50cdbfe9af4cd8f2d268b84",
+      "size": 626623,
+      "url": "https://api.github.com/repos/euphonee/Seeto.SolutionZ-Bloxstrike/git/blobs/efea893c034f93d8d50cdbfe9af4cd8f2d268b84"
+    },
+    {
+      "path": "assets/showcase.jpg",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "0df7e44fece96f2a4c65bb4df1caecffc5e7b7c3",
+      "size": 288774,
+      "url": "https://api.github.com/repos/euphonee/Seeto.SolutionZ-Bloxstrike/git/blobs/0df7e44fece96f2a4c65bb4df1caecffc5e7b7c3"
+    },
+    {
+      "path": "init.lua",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "85f6ce756c964482156964b3bbb4662e2137743b",
+      "size": 7299,
+      "url": "https://api.github.com/repos/euphonee/Seeto.SolutionZ-Bloxstrike/git/blobs/85f6ce756c964482156964b3bbb4662e2137743b"
+    },
+    {
+      "path": "src",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "f0036e9936959945419dbfcce717c296aa70a40e",
+      "url": "https://api.github.com/repos/euphonee/Seeto.SolutionZ-Bloxstrike/git/trees/f0036e9936959945419dbfcce717c296aa70a40e"
+    },
+    {
+      "path": "src/AntiFlash.lua",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "f13d3ff543c5517d0212a190c5edafc9fe6864ad",
+      "size": 3778,
+      "url": "https://api.github.com/repos/euphonee/Seeto.SolutionZ-Bloxstrike/git/blobs/f13d3ff543c5517d0212a190c5edafc9fe6864ad"
+    },
+    {
+      "path": "src/Bhop.lua",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "70d709d152cfbb30b38ac817d3da6b46cd857b3c",
+      "size": 2338,
+      "url": "https://api.github.com/repos/euphonee/Seeto.SolutionZ-Bloxstrike/git/blobs/70d709d152cfbb30b38ac817d3da6b46cd857b3c"
+    },
+    {
+      "path": "src/Config.lua",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "dcc59cc71eb2454b3daf959e8ff9dd999a23b2ad",
+      "size": 15096,
+      "url": "https://api.github.com/repos/euphonee/Seeto.SolutionZ-Bloxstrike/git/blobs/dcc59cc71eb2454b3daf959e8ff9dd999a23b2ad"
+    },
+    {
+      "path": "src/DamageEngine.lua",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "bcf110b201f69da283ab8d7e8cf3401bec3ca85f",
+      "size": 4070,
+      "url": "https://api.github.com/repos/euphonee/Seeto.SolutionZ-Bloxstrike/git/blobs/bcf110b201f69da283ab8d7e8cf3401bec3ca85f"
+    },
+    {
+      "path": "src/ESPManager.lua",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "31a4089600a199635abe5ee87f9387c2202f634c",
+      "size": 5448,
+      "url": "https://api.github.com/repos/euphonee/Seeto.SolutionZ-Bloxstrike/git/blobs/31a4089600a199635abe5ee87f9387c2202f634c"
+    },
+    {
+      "path": "src/LinoriaLib.lua",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "8b5e4fb83fa8a8f6ef8e00bdd0cc4921f389d4d4",
+      "size": 128077,
+      "url": "https://api.github.com/repos/euphonee/Seeto.SolutionZ-Bloxstrike/git/blobs/8b5e4fb83fa8a8f6ef8e00bdd0cc4921f389d4d4"
+    },
+    {
+      "path": "src/PacketLogger.lua",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "2583582f3699078f94125c28fe5c59f3232a0318",
+      "size": 3837,
+      "url": "https://api.github.com/repos/euphonee/Seeto.SolutionZ-Bloxstrike/git/blobs/2583582f3699078f94125c28fe5c59f3232a0318"
+    },
+    {
+      "path": "src/SilentAim.lua",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "9b3a1dfa808d0619d553472c8a07fc209523f77c",
+      "size": 6291,
+      "url": "https://api.github.com/repos/euphonee/Seeto.SolutionZ-Bloxstrike/git/blobs/9b3a1dfa808d0619d553472c8a07fc209523f77c"
+    },
+    {
+      "path": "src/SkeletonRenderer.lua",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "18054090bebc989c2c39a555cbf43021b16fa53c",
+      "size": 10802,
+      "url": "https://api.github.com/repos/euphonee/Seeto.SolutionZ-Bloxstrike/git/blobs/18054090bebc989c2c39a555cbf43021b16fa53c"
+    },
+    {
+      "path": "src/SpectateChecker.lua",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "92c89b49a2d637ba10f0b6e03d4b685727f92669",
+      "size": 2244,
+      "url": "https://api.github.com/repos/euphonee/Seeto.SolutionZ-Bloxstrike/git/blobs/92c89b49a2d637ba10f0b6e03d4b685727f92669"
+    },
+    {
+      "path": "src/TargetEngine.lua",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "274a2d79d3d33e6d470676fd1ada7776503d507a",
+      "size": 12087,
+      "url": "https://api.github.com/repos/euphonee/Seeto.SolutionZ-Bloxstrike/git/blobs/274a2d79d3d33e6d470676fd1ada7776503d507a"
+    },
+    {
+      "path": "src/UIManager.lua",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "9c102f36f6b204622e17de9a1c09e10191fcbf62",
+      "size": 25286,
+      "url": "https://api.github.com/repos/euphonee/Seeto.SolutionZ-Bloxstrike/git/blobs/9c102f36f6b204622e17de9a1c09e10191fcbf62"
+    },
+    {
+      "path": "src/Utils.lua",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "585656488442ea18f441f3608f0b1873a09ecb9d",
+      "size": 4292,
+      "url": "https://api.github.com/repos/euphonee/Seeto.SolutionZ-Bloxstrike/git/blobs/585656488442ea18f441f3608f0b1873a09ecb9d"
+    },
+    {
+      "path": "src/Wallbang.lua",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "66246c2ab67a1c874c46424b09de4b29aa11458b",
+      "size": 2981,
+      "url": "https://api.github.com/repos/euphonee/Seeto.SolutionZ-Bloxstrike/git/blobs/66246c2ab67a1c874c46424b09de4b29aa11458b"
+    },
+    {
+      "path": "src/WeaponEngine.lua",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "2c9659c8e19de5e39a8eaeddb4686c2957100133",
+      "size": 9535,
+      "url": "https://api.github.com/repos/euphonee/Seeto.SolutionZ-Bloxstrike/git/blobs/2c9659c8e19de5e39a8eaeddb4686c2957100133"
+    }
+  ],
+  "truncated": false
+}
