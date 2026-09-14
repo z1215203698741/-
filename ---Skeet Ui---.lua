@@ -685,7 +685,19 @@ do -- Library
                     local Hue, Saturation, Val = Got.Color:ToHSV()
                     --
                     Config[Index] = {Hue, Saturation, Val, Transparency}
-                elseif typeof(Got) == "boolean" or typeof(Got) == "number" or typeof(Got) == "string" or typeof(Got) == "table" then
+                elseif typeof(Got) == "table" then
+                    -- 表值白名单过滤：只保留 bool/number/string（嵌套一层），
+                    -- 防止 MultiDropdown 等控件的值里混入 Enum/Color3 等 userdata 导致整个 JSONEncode 失败
+                    local SafeTable = {}
+                    for K, V in Got do
+                        if typeof(K) == "string" or typeof(K) == "number" then
+                            if typeof(V) == "boolean" or typeof(V) == "number" or typeof(V) == "string" then
+                                SafeTable[K] = V
+                            end
+                        end
+                    end
+                    Config[Index] = SafeTable
+                elseif typeof(Got) == "boolean" or typeof(Got) == "number" or typeof(Got) == "string" then
                     Config[Index] = Got
                 end
                 -- 其余类型（Enum 等）无法 JSON 序列化，直接跳过，避免整个保存报错
@@ -3540,6 +3552,7 @@ do -- Library
                     Library.Objects[DropdownMainOutline] = {DropdownMainOutline, OldValues[2], false}
                     DropdownMainOutline.Visible = true
                     --
+                    DropdownMain.CanvasPosition = Vector2.zero -- 每次展开回到顶部
                     if Fast then
                         Library:Fade(true, Library:GetObjectsTable(DropdownMainOutline, true), DropdownMainOutline, 0)
                         DropdownMainOutline.Size = UDim2.new(0, DropdownOutline_5.AbsoluteSize.X, 0, math.min(#Options.Content * 20 + 2, Camera.ViewportSize.Y - 80))
