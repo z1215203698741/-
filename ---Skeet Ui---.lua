@@ -707,6 +707,97 @@ do -- Library
         return HttpService:JSONEncode(Config)
     end
     --
+    -- ===== 配置文件管理（对齐黑曜石 SaveManager 架构，逻辑全部收在库内） =====
+    --
+    -- 非 ASCII（中文等）转 \uXXXX：部分手机执行器 writefile/readfile 对 UTF-8 编码处理有问题
+    local function jsonAsciiSafe(s)
+        if not (utf8 and utf8.codepoint) then return s end
+        local out = {}
+        local i, n = 1, #s
+        while i <= n do
+            local byte = s:byte(i)
+            if byte < 0x80 then
+                out[#out + 1] = s:sub(i, i)
+                i += 1
+            else
+                local len = byte >= 0xF0 and 4 or byte >= 0xE0 and 3 or 2
+                local seq = s:sub(i, i + len - 1)
+                local okCP, cp = pcall(utf8.codepoint, seq)
+                if okCP and cp and cp > 0x7F then
+                    if cp > 0xFFFF then
+                        cp -= 0x10000
+                        local hi = 0xD800 + (cp // 0x400)
+                        local lo = 0xDC00 + (cp % 0x400)
+                        out[#out + 1] = string.format("\\u%04x\\u%04x", hi, lo)
+                    else
+                        out[#out + 1] = string.format("\\u%04x", cp)
+                    end
+                else
+                    out[#out + 1] = seq
+                end
+                i += len
+            end
+        end
+        return table.concat(out)
+    end
+    --
+    -- 保存配置：GetConfig → 数值清洗（NaN/Infinity）→ ASCII 转义 → 删旧写入 → 回读校验（含长度对比，定位执行器 8KB 限制）
+    -- 成功返回 true；失败返回 false + 错误描述
+    function Library:SaveConfigFile(Folder, Name)
+        local ok, encoded = pcall(function() return self:GetConfig() end)
+        if not ok or type(encoded) ~= "string" then
+            return false, "生成配置失败: " .. tostring(encoded)
+        end
+        -- 数值清洗：NaN/Infinity 是裸 token 不是合法 JSON（字符串值里不会出现这些词，替换安全）
+        local okS, sanitized = pcall(function()
+            return encoded:gsub("NaN", "0"):gsub("%-?Infinity", "999999")
+        end)
+        if okS and type(sanitized) == "string" then encoded = sanitized end
+        -- 中文等非 ASCII 转 \uXXXX（JSONDecode 自动还原），文件变纯 ASCII 编码安全
+        local okA, ascii = pcall(jsonAsciiSafe, encoded)
+        if okA and type(ascii) == "string" then encoded = ascii end
+        local Path = Folder .. "/" .. Name .. ".cfg"
+        pcall(delfile, Path)
+        local okW, werr = pcall(writefile, Path, encoded)
+        if not okW then
+            return false, "写入失败（执行器不支持 writefile?）: " .. tostring(werr)
+        end
+        local raw = ""
+        pcall(function() raw = tostring(readfile(Path)) end)
+        local okV, decoded = pcall(function() return HttpService:JSONDecode(raw) end)
+        if not okV or type(decoded) ~= "table" then
+            local hint = ""
+            if #raw < #encoded then
+                hint = string.format("（截断: 写入%d字节 读回%d字节 → 执行器单文件限制约%dKB，请减少配置体积或换执行器）", #encoded, #raw, math.floor(#raw / 1024))
+            end
+            return false, "回读校验失败: 长度" .. #raw .. "/" .. #encoded .. hint .. " 头[" .. raw:sub(1, 30) .. "] 尾[" .. raw:sub(-25) .. "]"
+        end
+        return true
+    end
+    --
+    -- 加载配置：逐 Flag 单独 pcall（单个控件 Set 失败只跳过该项），返回 true,成功数,跳过数 / false,错误
+    function Library:LoadConfigFile(Folder, Name)
+        local Path = Folder .. "/" .. Name .. ".cfg"
+        if isfile and not isfile(Path) then
+            return false, "文件不存在"
+        end
+        local raw = ""
+        pcall(function() raw = tostring(readfile(Path)) end)
+        local okD, data = pcall(function() return HttpService:JSONDecode(raw) end)
+        if not okD or type(data) ~= "table" then
+            return false, "文件损坏: 长度" .. #raw .. " 头[" .. raw:sub(1, 30) .. "] 尾[" .. raw:sub(-25) .. "]"
+        end
+        local applied, failed = 0, 0
+        for Index, Value in data do
+            local Flag = self.Flags[Index]
+            if Flag and type(Flag.Set) == "function" then
+                local ok = pcall(function() Flag:Set(Value) end)
+                if ok then applied += 1 else failed += 1 end
+            end
+        end
+        return true, applied, failed
+    end
+    --
     function Library:LoadConfig(Config)
         local Config = HttpService:JSONDecode(Config)
         --
