@@ -5809,6 +5809,195 @@ do -- Library
         Outline.Active = true
         Outline.Draggable = true
         --
+        -- ==================== Neverlose 原版风格指示器（屏幕左侧垂直居中，渐变竖线胶囊，复刻 source.luau CreateIndicator） ====================
+        -- 规格：底 RGB(8,8,13)@0.2 · 角25 · 左侧3px上下渐隐竖线 · 图标+GothamBold文字 · 宽度随文本自适应 · 红/绿/白三色
+        -- 手机适配：Library.IsMobile 时整体 0.78 缩放；挂 ScreenGui 根节点，锚定屏幕左缘，与菜单位置无关
+        local IndHolder = Library:CreateObject("Frame", {
+            Name = "RageIndicatorHolder",
+            AnchorPoint = Vector2.new(0, 0.5),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            Position = UDim2.new(0, 15, 0.5, 0),
+            Size = UDim2.new(0, 100, 0, 100),
+            Parent = MainUI
+        })
+        --
+        Library:CreateObject("UIListLayout", {
+            FillDirection = Enum.FillDirection.Vertical,
+            HorizontalAlignment = Enum.HorizontalAlignment.Left,
+            Padding = UDim.new(0, 10),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Parent = IndHolder
+        })
+        --
+        local IndItems, IndColors, IndOrder = {}, {
+            red = Color3.fromRGB(255, 102, 105),
+            green = Color3.fromRGB(135, 255, 143),
+            white = Color3.fromRGB(186, 186, 186)
+        }, 0
+        --
+        -- BuilderIcons 图标字体（Roblox 内置资产；失败则省略图标列，仅保留渐变竖线+文字）
+        local IndIconFont = nil
+        pcall(function()
+            IndIconFont = Font.new("rbxasset://LuaPackages/Packages/_Index/BuilderIcons/BuilderIcons/BuilderIcons.json", Enum.FontWeight.Bold)
+        end)
+        local IndIconMap = {
+            RG = "crosshairs",
+            DT = "chevron-large-right",
+            BT = "chevron-large-left"
+        }
+        --
+        local IndTextService = game:GetService("TextService")
+        local function indMeasure(str, size)
+            local ok, w = pcall(function()
+                return IndTextService:GetTextSize(tostring(str), size, Enum.Font.GothamBold, Vector2.new(5000, 5000)).X
+            end)
+            if ok and w and w > 0 then return w end
+            return #tostring(str) * size * 0.62
+        end
+        --
+        -- key: 唯一标识；text: 缩写；param: 括号参数（可 nil）；colorType: "red"/"green"/"white"
+        function Window:SetRageIndicator(key, active, text, param, colorType)
+            colorType = IndColors[colorType] and colorType or "red"
+            local col = IndColors[colorType]
+            local s = Library.IsMobile and 0.78 or 1
+            local item = IndItems[key]
+            if active and not item then
+                IndOrder = IndOrder + 1
+                local h = math.floor(40 * s + 0.5)
+                local pill = Library:CreateObject("Frame", {
+                    Name = "RageInd_" .. tostring(key),
+                    LayoutOrder = IndOrder,
+                    BackgroundColor3 = Color3.fromRGB(8, 8, 13),
+                    BackgroundTransparency = 1,
+                    BorderSizePixel = 0,
+                    ClipsDescendants = true,
+                    Size = UDim2.new(0, math.floor(85 * s + 0.5), 0, h),
+                    Visible = false,
+                    Parent = IndHolder
+                })
+                Library:CreateObject("UICorner", { CornerRadius = UDim.new(0, math.floor(25 * s + 0.5)), Parent = pill })
+                local line = Library:CreateObject("Frame", {
+                    Name = "Line",
+                    AnchorPoint = Vector2.new(0, 0.5),
+                    BackgroundColor3 = col,
+                    BackgroundTransparency = 1,
+                    BorderSizePixel = 0,
+                    Position = UDim2.new(0, math.floor(2 * s + 0.5), 0.5, 0),
+                    Size = UDim2.new(0, math.floor(3 * s + 0.5), 0.65, 0),
+                    Parent = pill
+                })
+                Library:CreateObject("UICorner", { CornerRadius = UDim.new(0, math.floor(25 * s + 0.5)), Parent = line })
+                Library:CreateObject("UIGradient", { Rotation = 90, Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.5, 0), NumberSequenceKeypoint.new(1, 1) }), Parent = line })
+                local icon
+                if IndIconFont then
+                    icon = Library:CreateObject("TextLabel", {
+                        Name = "Icon",
+                        AnchorPoint = Vector2.new(0, 0.5),
+                        BackgroundTransparency = 1,
+                        BorderSizePixel = 0,
+                        FontFace = IndIconFont,
+                        Position = UDim2.new(0, math.floor(10 * s + 0.5), 0.5, 0),
+                        Size = UDim2.new(0, math.floor(25 * s + 0.5), 0, math.floor(25 * s + 0.5)),
+                        Text = IndIconMap[key] or "crosshairs",
+                        TextColor3 = col,
+                        TextSize = math.floor(21 * s + 0.5),
+                        TextTransparency = 1,
+                        TextWrapped = true,
+                        Parent = pill
+                    })
+                end
+                local abbr = Library:CreateObject("TextLabel", {
+                    Name = "Abbr",
+                    AnchorPoint = Vector2.new(0, 0.5),
+                    BackgroundTransparency = 1,
+                    BorderSizePixel = 0,
+                    Font = Enum.Font.GothamBold,
+                    Position = UDim2.new(0, math.floor(40 * s + 0.5), 0.5, 0),
+                    Size = UDim2.new(1, -math.floor(40 * s + 0.5), 0, math.floor(25 * s + 0.5)),
+                    Text = tostring(text or key),
+                    TextColor3 = col,
+                    TextSize = math.floor(20 * s + 0.5),
+                    TextTransparency = 1,
+                    TextXAlignment = Enum.TextXAlignment.Left,
+                    Parent = pill
+                })
+                local paramLabel = Library:CreateObject("TextLabel", {
+                    Name = "Param",
+                    AnchorPoint = Vector2.new(0, 0.5),
+                    BackgroundTransparency = 1,
+                    BorderSizePixel = 0,
+                    Font = Enum.Font.GothamMedium,
+                    Position = UDim2.new(0, math.floor(40 * s + 0.5), 0.5, 0),
+                    Size = UDim2.new(0, 0, 0, math.floor(25 * s + 0.5)),
+                    Text = "",
+                    TextColor3 = col,
+                    TextSize = math.floor(13 * s + 0.5),
+                    TextTransparency = 1,
+                    TextXAlignment = Enum.TextXAlignment.Left,
+                    Visible = false,
+                    Parent = pill
+                })
+                item = { pill = pill, line = line, icon = icon, abbr = abbr, param = paramLabel, shown = false }
+                IndItems[key] = item
+            end
+            --
+            if not item then return end
+            --
+            -- 宽度自适应：文本/参数变化时重算并缓动（等价原版 Indicator.Update，显示时无条件 tween 到目标宽度）
+            local function fitWidth()
+                local tw = indMeasure(text or key, math.floor(20 * s + 0.5))
+                local newParam = param and tostring(param) or ""
+                local pw = 0
+                if newParam ~= "" then
+                    pw = indMeasure(newParam, math.floor(13 * s + 0.5)) + math.floor(6 * s + 0.5)
+                end
+                item.param.Position = UDim2.new(0, math.floor(40 * s + tw + 6 * s + 0.5), 0.5, 0)
+                Library:TweenObject(item.pill, TweenInfo.new(0.175), { Size = UDim2.new(0, math.floor(40 * s + tw + pw + 20 * s + 0.5), 0, item.pill.Size.Y.Offset) })
+                return newParam
+            end
+            --
+            if active then
+                local newParam = fitWidth()
+                item.param.Text = newParam
+                item.param.Visible = newParam ~= ""
+                item.abbr.Text = tostring(text or key)
+                item.abbr.TextColor3 = col
+                item.param.TextColor3 = col
+                item.line.BackgroundColor3 = col
+                if item.icon then
+                    item.icon.TextColor3 = col
+                end
+                if not item.shown then
+                    item.shown = true
+                    item.pill.Visible = true
+                    Library:TweenObject(item.pill, TweenInfo.new(0.175), { BackgroundTransparency = 0.2 })
+                    Library:TweenObject(item.line, TweenInfo.new(0.175), { BackgroundTransparency = 0 })
+                    local vslow = TweenInfo.new(0.5, Enum.EasingStyle.Quint)
+                    Library:TweenObject(item.abbr, vslow, { TextTransparency = 0.2, TextColor3 = col })
+                    Library:TweenObject(item.param, vslow, { TextTransparency = 0.35, TextColor3 = col })
+                    if item.icon then
+                        Library:TweenObject(item.icon, vslow, { TextTransparency = 0.25, TextColor3 = col })
+                    end
+                end
+            else
+                if item.shown then
+                    item.shown = false
+                    Library:TweenObject(item.pill, TweenInfo.new(0.175), { BackgroundTransparency = 1 })
+                    Library:TweenObject(item.line, TweenInfo.new(0.175), { BackgroundTransparency = 1 })
+                    local vslow = TweenInfo.new(0.5, Enum.EasingStyle.Quint)
+                    Library:TweenObject(item.abbr, vslow, { TextTransparency = 1, TextColor3 = col })
+                    Library:TweenObject(item.param, vslow, { TextTransparency = 1, TextColor3 = col })
+                    if item.icon then
+                        Library:TweenObject(item.icon, vslow, { TextTransparency = 1, TextColor3 = col })
+                    end
+                    task.delay(0.25, function()
+                        if not item.shown then item.pill.Visible = false end
+                    end)
+                end
+            end
+        end
+        --
         local Inline = Library:CreateObject("Frame", {
             Name = "Inline",
             Position = UDim2.new(0, 1, 0, 1),
