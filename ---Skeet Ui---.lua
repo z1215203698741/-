@@ -3625,6 +3625,10 @@ do -- Library
             function Dropdown:Toggle(Fast)
                 local Fast = Fast or false
                 local OldValues = Library.Objects[DropdownMainOutline]
+                -- 面板高度按实际选项数算（支持 AddValue 动态加项；Items 为空回退 Content）
+                local ItemCount = 0
+                for _ in pairs(Dropdown.Items) do ItemCount += 1 end
+                if ItemCount == 0 then ItemCount = #Options.Content end
                 --
                 if Dropdown.Open then
                     if Fast then
@@ -3646,10 +3650,10 @@ do -- Library
                     DropdownMain.CanvasPosition = Vector2.zero -- 每次展开回到顶部
                     if Fast then
                         Library:Fade(true, Library:GetObjectsTable(DropdownMainOutline, true), DropdownMainOutline, 0)
-                        DropdownMainOutline.Size = UDim2.new(0, DropdownOutline_5.AbsoluteSize.X, 0, math.min(#Options.Content * 20 + 2, Camera.ViewportSize.Y - 80))
+                        DropdownMainOutline.Size = UDim2.new(0, DropdownOutline_5.AbsoluteSize.X, 0, math.min(ItemCount * 20 + 2, Camera.ViewportSize.Y - 80))
                     else
                         Library:Fade(true, Library:GetObjectsTable(DropdownMainOutline, true), DropdownMainOutline, 0.1)
-                        Library:TweenObject(DropdownMainOutline, TweenInfo.new(Library.UI.TweenSpeed, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = UDim2.new(0, DropdownOutline_5.AbsoluteSize.X, 0, math.min(#Options.Content * 20 + 2, Camera.ViewportSize.Y - 80))})
+                        Library:TweenObject(DropdownMainOutline, TweenInfo.new(Library.UI.TweenSpeed, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = UDim2.new(0, DropdownOutline_5.AbsoluteSize.X, 0, math.min(ItemCount * 20 + 2, Camera.ViewportSize.Y - 80))})
                     end
                 end
                 --
@@ -3784,6 +3788,10 @@ do -- Library
             Flag = Library.NewFlag(),
             Callback = function() end
         }, Options or {})
+        --
+        -- Decimal 是步长（1=整数步）：传 0/nil 会触发 Value/0=inf → 0*inf=NaN，导致填充与数值全部失效
+        Options.Decimal = tonumber(Options.Decimal)
+        if not Options.Decimal or Options.Decimal <= 0 then Options.Decimal = 1 end
         --
         local Slider = {
             MouseDown = false,
@@ -4623,6 +4631,7 @@ do -- Library
             Default = "",
             Name = "Preview TextBox",
             Max = 32,
+            Placeholder = "_",
             Parent = nil,
             Size = UDim2.new(1, 0, 0, 19),
             Position = UDim2.new(0, 0, 0, 0),
@@ -4702,7 +4711,7 @@ do -- Library
             ClearTextOnFocus = Options.ClearOnFocus,
             PlaceholderColor3 = Library.Theme.Default.TextColor,
             TextXAlignment = Enum.TextXAlignment.Left,
-            PlaceholderText = "_",
+            PlaceholderText = Options.Placeholder or "_",
             TextSize = Library.UI.FontSize,
             BackgroundColor3 = Color3.fromRGB(255, 255, 255),
             Parent = TextBoxMain
@@ -4774,7 +4783,7 @@ do -- Library
                 if Options.CheckIfPressedEnter and not EnterPressed then return end
                 --
                 TextBox.Focused = false
-                TextBoxObject.PlaceholderText = "_"
+                TextBoxObject.PlaceholderText = Options.Placeholder or "_"
                 --
                 TextBoxObject.TextColor3 = Library.Theme.Default.TextColor
                 --
@@ -8133,6 +8142,8 @@ do -- Library
                     NumbersOnly = false,
                     ClearOnFocus = false,
                     CheckIfPressedEnter = false,
+                    TypedCheck = false,
+                    Placeholder = "_",
                     Risky = false,
                     Hidden = false,
                     Flag = Library.NewFlag(),
@@ -8146,6 +8157,8 @@ do -- Library
                     NumbersOnly = Options.NumbersOnly,
                     ClearOnFocus = Options.ClearOnFocus,
                     CheckIfPressedEnter = Options.CheckIfPressedEnter,
+                    TypedCheck = Options.TypedCheck,
+                    Placeholder = Options.Placeholder,
                     Risky = Options.Risky,
                     Hidden = Options.Hidden,
                     Parent = self.Elements.ContentHolder,
