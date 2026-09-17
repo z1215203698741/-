@@ -3205,7 +3205,8 @@ do -- Library
             local StartingY = PreviewMultiBox_5.AbsolutePosition.Y
             local MainUIStartingX = Options.MainUI.AbsolutePosition.X
             local MainUIStartingY = Options.MainUI.AbsolutePosition.Y
-            local StartingCanvasPosition = Options.Parent.CanvasPosition
+            -- Parent 可能是非滚动容器（如自定义并排工具行）：IsA 守卫防 nil 属性报错
+            local StartingCanvasPosition = Options.Parent:IsA("ScrollingFrame") and Options.Parent.CanvasPosition or nil
             --
             Library:Connection(PreviewMultiBox_5:GetPropertyChangedSignal("AbsolutePosition"), function()
                 if not MultiBox.Open then return end
@@ -3214,7 +3215,7 @@ do -- Library
                 local CurrentY = PreviewMultiBox_5.AbsolutePosition.Y
                 local MainUICurrentX = Options.MainUI.AbsolutePosition.X
                 local MainUICurrentY = Options.MainUI.AbsolutePosition.Y
-                local CurrentCanvasPosition = Options.Parent.CanvasPosition
+                local CurrentCanvasPosition = Options.Parent:IsA("ScrollingFrame") and Options.Parent.CanvasPosition or nil
                 --
                 if MainUICurrentX ~= MainUIStartingX or MainUICurrentY ~= MainUIStartingY then
                     MainUIStartingX = MainUICurrentX
@@ -3325,7 +3326,8 @@ do -- Library
         local PreviewDropdown_5 = Library:CreateObject("Frame", {
             Name = "PreviewDropdown_5",
             BackgroundTransparency = 1,
-            Size = Options.Name == "" and UDim2.new(1, 0, 0, 20) or UDim2.new(1, 0, 0, 31),
+            Size = Options.Size or (Options.Name == "" and UDim2.new(1, 0, 0, 20) or UDim2.new(1, 0, 0, 31)),
+            Position = Options.Position or UDim2.new(0, 0, 0, 0),
             BorderColor3 = Color3.fromRGB(0, 0, 0),
             ZIndex = 3,
             BorderSizePixel = 0,
@@ -3680,7 +3682,8 @@ do -- Library
             local StartingY = PreviewDropdown_5.AbsolutePosition.Y
             local MainUIStartingX = Options.MainUI.AbsolutePosition.X
             local MainUIStartingY = Options.MainUI.AbsolutePosition.Y
-            local StartingCanvasPosition = Options.Parent.CanvasPosition
+            -- Parent 可能是非滚动容器（如自定义并排工具行）：IsA 守卫防 nil 属性报错
+            local StartingCanvasPosition = Options.Parent:IsA("ScrollingFrame") and Options.Parent.CanvasPosition or nil
             --
             Library:Connection(PreviewDropdown_5:GetPropertyChangedSignal("AbsolutePosition"), function()
                 if not Dropdown.Open then return end
@@ -3689,7 +3692,7 @@ do -- Library
                 local CurrentY = PreviewDropdown_5.AbsolutePosition.Y
                 local MainUICurrentX = Options.MainUI.AbsolutePosition.X
                 local MainUICurrentY = Options.MainUI.AbsolutePosition.Y
-                local CurrentCanvasPosition = Options.Parent.CanvasPosition
+                local CurrentCanvasPosition = Options.Parent:IsA("ScrollingFrame") and Options.Parent.CanvasPosition or nil
                 --
                 if MainUICurrentX ~= MainUIStartingX or MainUICurrentY ~= MainUIStartingY then
                     MainUIStartingX = MainUICurrentX
@@ -6672,6 +6675,9 @@ do -- Library
                     end
                 end)
             end
+            --
+            -- 暴露 Tab 内部容器：供外部嵌入整幅自定义面板（如内置服务器浏览器）
+            Tab.Holders = { Outline1 = Outline_1, SectionsHolder = SectionsHolder, Left = Left, Right = Right }
             --
             Window.Tabs[#Window.Tabs + 1] = Tab
             --
