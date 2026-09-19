@@ -2232,6 +2232,9 @@ do -- Library
         }
         --
         Library.Flags[Options.Flag] = Keybind
+        -- 键位注册表：快捷键列表 HUD 遍历这里（登记制，替代 Flags 类型嗅探）
+        Library.KeybindList = Library.KeybindList or {}
+        table.insert(Library.KeybindList, Keybind)
         Library.UI.TotalKeybindModes += 1
         --
         local KeybindObject = Library:CreateObject("TextLabel", {
@@ -8609,6 +8612,7 @@ do -- Library
             end)
             UIS.InputChanged:Connect(function(input)
                 if not dragging then return end
+                if frame:GetAttribute("Resizing") then return end
                 if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
                     local delta = input.Position - dragStart
                     frame.Position = UDim2.new(frameStart.X.Scale, frameStart.X.Offset + delta.X, frameStart.Y.Scale, frameStart.Y.Offset + delta.Y)
@@ -8639,6 +8643,7 @@ do -- Library
                 if gp then return end
                 if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                     resizing = true
+                    frame:SetAttribute("Resizing", true)
                     start = input.Position
                     startSize = frame.AbsoluteSize
                 end
@@ -8654,6 +8659,7 @@ do -- Library
             HUDUIS.InputEnded:Connect(function(input)
                 if input.UserInputState == Enum.UserInputState.End then
                     resizing = false
+                    frame:SetAttribute("Resizing", false)
                 end
             end)
         end
@@ -8699,8 +8705,10 @@ do -- Library
             wave.Parent = Background
             --
             local Accent = Library.Theme.Default.Accent
-            local gridBuilt = false
+            local gridHolder = nil
+            local lastW, lastH = 0, 0
             local segs = {}
+            local segsBuilt = false
             local maxN = 54
             local history = {}
             local visible = false
@@ -8708,12 +8716,19 @@ do -- Library
             local lastPos = nil
             local smooth = 0
             --
+            -- 网格随尺寸变化重建（拉大/缩小后结构线始终铺满）
             local function buildStatic()
-                if gridBuilt then return end
-                gridBuilt = true
                 local w = wave.AbsoluteSize.X
                 local h = wave.AbsoluteSize.Y
-                if w < 10 or h < 10 then gridBuilt = false return end
+                if w < 10 or h < 10 then return end
+                if gridHolder and w == lastW and h == lastH then return end
+                lastW, lastH = w, h
+                if gridHolder then gridHolder:Destroy() end
+                gridHolder = Instance.new("Frame")
+                gridHolder.BackgroundTransparency = 1
+                gridHolder.Size = UDim2.new(1, 0, 1, 0)
+                gridHolder.ZIndex = 502
+                gridHolder.Parent = wave
                 local x = 0
                 while x < w do
                     local v = Instance.new("Frame")
@@ -8723,7 +8738,7 @@ do -- Library
                     v.BackgroundTransparency = 0.85
                     v.BorderSizePixel = 0
                     v.ZIndex = 502
-                    v.Parent = wave
+                    v.Parent = gridHolder
                     x += 16
                 end
                 local y = 0
@@ -8735,24 +8750,27 @@ do -- Library
                     hline.BackgroundTransparency = 0.85
                     hline.BorderSizePixel = 0
                     hline.ZIndex = 502
-                    hline.Parent = wave
+                    hline.Parent = gridHolder
                     y += 14
                 end
-                for i = 1, maxN do
-                    local seg = Instance.new("Frame")
-                    seg.AnchorPoint = Vector2.new(0.5, 0.5)
-                    seg.BackgroundColor3 = Accent
-                    seg.BorderSizePixel = 0
-                    seg.Size = UDim2.new(0, 4, 0, 2)
-                    seg.Visible = false
-                    seg.ZIndex = 503
-                    local stroke = Instance.new("UIStroke")
-                    stroke.Color = Accent
-                    stroke.Thickness = 2
-                    stroke.Transparency = 0.55
-                    stroke.Parent = seg
-                    seg.Parent = wave
-                    segs[i] = seg
+                if not segsBuilt then
+                    segsBuilt = true
+                    for i = 1, maxN do
+                        local seg = Instance.new("Frame")
+                        seg.AnchorPoint = Vector2.new(0.5, 0.5)
+                        seg.BackgroundColor3 = Accent
+                        seg.BorderSizePixel = 0
+                        seg.Size = UDim2.new(0, 4, 0, 2)
+                        seg.Visible = false
+                        seg.ZIndex = 503
+                        local stroke = Instance.new("UIStroke")
+                        stroke.Color = Accent
+                        stroke.Thickness = 2
+                        stroke.Transparency = 0.55
+                        stroke.Parent = seg
+                        seg.Parent = wave
+                        segs[i] = seg
+                    end
                 end
             end
             --
@@ -8822,8 +8840,8 @@ do -- Library
                 end,
                 SetAppearance = function(bgColor, borderColor, trans)
                     pcall(function()
-                        Background.BackgroundColor3 = bgColor
-                        Background.BackgroundTransparency = trans
+                        Background.ImageColor3 = bgColor
+                        Background.ImageTransparency = trans
                         Border.BackgroundColor3 = borderColor
                         Border.BorderColor3 = borderColor
                     end)
@@ -8878,8 +8896,8 @@ do -- Library
                     pcall(function() r:Destroy() end)
                 end
                 rows = {}
-                for _, v in pairs(Library.Flags) do
-                    if type(v) == "table" and typeof(v.Keybind) == "string" and v.Keybind ~= "[-]" and v.Toggle and type(v.Toggle) == "table" and v.Toggle.State then
+                for _, v in ipairs(Library.KeybindList or {}) do
+                    if typeof(v.Keybind) == "string" and v.Keybind ~= "[-]" and v.Toggle and type(v.Toggle) == "table" and v.Toggle.State then
                         local name = "?"
                         pcall(function() name = tostring(v.Toggle:GetName() or "?") end)
                         local row = Instance.new("Frame")
@@ -8935,8 +8953,8 @@ do -- Library
                 end,
                 SetAppearance = function(bgColor, borderColor, trans)
                     pcall(function()
-                        Background.BackgroundColor3 = bgColor
-                        Background.BackgroundTransparency = trans
+                        Background.ImageColor3 = bgColor
+                        Background.ImageTransparency = trans
                         Border.BackgroundColor3 = borderColor
                         Border.BorderColor3 = borderColor
                     end)
