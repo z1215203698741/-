@@ -8630,7 +8630,7 @@ do -- Library
             --
             local title = Instance.new("TextLabel")
             title.Text = "速度表"
-            title.Font = Library.UI.NewFont
+            title.FontFace = Library.UI.NewFont
             title.TextSize = Library.UI.FontSize
             title.TextColor3 = Library.Theme.Default.TextColor
             title.BackgroundTransparency = 1
@@ -8642,7 +8642,7 @@ do -- Library
             --
             local value = Instance.new("TextLabel")
             value.Text = "0.0 st/s"
-            value.Font = Library.UI.NewFont
+            value.FontFace = Library.UI.NewFont
             value.TextSize = 15
             value.TextColor3 = Library.Theme.Default.Accent
             value.BackgroundTransparency = 1
@@ -8780,7 +8780,7 @@ do -- Library
             --
             local title = Instance.new("TextLabel")
             title.Text = "Hotkey List"
-            title.Font = Library.UI.NewFont
+            title.FontFace = Library.UI.NewFont
             title.TextSize = Library.UI.FontSize
             title.TextColor3 = Library.Theme.Default.Accent
             title.BackgroundTransparency = 1
@@ -8830,7 +8830,7 @@ do -- Library
                         row.Parent = scroll
                         local label = Instance.new("TextLabel")
                         label.Text = name
-                        label.Font = Library.UI.NewFont
+                        label.FontFace = Library.UI.NewFont
                         label.TextSize = Library.UI.FontSize
                         label.TextColor3 = Library.Theme.Default.TextColor
                         label.BackgroundTransparency = 1
@@ -8842,7 +8842,7 @@ do -- Library
                         label.Parent = row
                         local key = Instance.new("TextLabel")
                         key.Text = "[" .. v.Keybind .. "]"
-                        key.Font = Library.UI.NewFont
+                        key.FontFace = Library.UI.NewFont
                         key.TextSize = Library.UI.FontSize
                         key.TextColor3 = Library.Theme.Default.Accent
                         key.BackgroundTransparency = 1
@@ -8857,7 +8857,7 @@ do -- Library
                 if count == 0 then
                     local empty = Instance.new("TextLabel")
                     empty.Text = "无已开启的快捷键功能"
-                    empty.Font = Library.UI.NewFont
+                    empty.FontFace = Library.UI.NewFont
                     empty.TextSize = Library.UI.FontSize
                     empty.TextColor3 = Library.Theme.Default.TextColor
                     empty.BackgroundTransparency = 1
