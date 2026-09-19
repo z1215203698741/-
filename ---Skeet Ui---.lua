@@ -2223,6 +2223,8 @@ do -- Library
             State = false,
             SelectingKeybind = false,
             Toggle = false,
+            -- 关联的功能开关本体：快捷键列表 HUD 用它取名称和开启状态
+            Owner = Options.Toggle,
             Connection = nil,
             Mode = Options.Mode,
             ConfigKeybind = nil,
@@ -8869,9 +8871,18 @@ do -- Library
             title.ZIndex = 502
             title.Parent = Background
             --
+            -- 标题分隔线：与内容区隔开
+            local divider = Instance.new("Frame")
+            divider.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+            divider.BorderSizePixel = 0
+            divider.Size = UDim2.new(1, -12, 0, 1)
+            divider.Position = UDim2.new(0, 6, 0, 21)
+            divider.ZIndex = 502
+            divider.Parent = Background
+            --
             local scroll = Instance.new("ScrollingFrame")
-            scroll.Position = UDim2.new(0, 6, 0, 22)
-            scroll.Size = UDim2.new(1, -12, 1, -28)
+            scroll.Position = UDim2.new(0, 6, 0, 25)
+            scroll.Size = UDim2.new(1, -12, 1, -31)
             scroll.BackgroundTransparency = 1
             scroll.BorderSizePixel = 0
             scroll.ScrollBarThickness = 2
@@ -8897,38 +8908,50 @@ do -- Library
                 end
                 rows = {}
                 for _, v in ipairs(Library.KeybindList or {}) do
-                    if typeof(v.Keybind) == "string" and v.Keybind ~= "[-]" and v.Toggle and type(v.Toggle) == "table" and v.Toggle.State then
-                        local name = "?"
-                        pcall(function() name = tostring(v.Toggle:GetName() or "?") end)
-                        local row = Instance.new("Frame")
-                        row.BackgroundTransparency = 1
-                        row.Size = UDim2.new(1, -4, 0, 16)
-                        row.ZIndex = 503
-                        row.Parent = scroll
-                        local label = Instance.new("TextLabel")
-                        label.Text = name
-                        label.FontFace = Library.UI.NewFont
-                        label.TextSize = Library.UI.FontSize
-                        label.TextColor3 = Library.Theme.Default.TextColor
-                        label.BackgroundTransparency = 1
-                        label.Size = UDim2.new(1, -48, 1, 0)
-                        label.Position = UDim2.new(0, 0, 0, 0)
-                        label.TextXAlignment = Enum.TextXAlignment.Left
-                        label.TextTruncate = Enum.TextTruncate.AtEnd
-                        label.ZIndex = 503
-                        label.Parent = row
-                        local key = Instance.new("TextLabel")
-                        key.Text = "[" .. v.Keybind .. "]"
-                        key.FontFace = Library.UI.NewFont
-                        key.TextSize = Library.UI.FontSize
-                        key.TextColor3 = Library.Theme.Default.Accent
-                        key.BackgroundTransparency = 1
-                        key.Size = UDim2.new(0, 46, 1, 0)
-                        key.Position = UDim2.new(1, -46, 0, 0)
-                        key.TextXAlignment = Enum.TextXAlignment.Right
-                        key.ZIndex = 503
-                        key.Parent = row
-                        rows[#rows + 1] = row
+                    -- 显示条件：已绑定键位 且 关联功能开关处于开启状态（状态/名称从 Owner 主开关本体取）
+                    if typeof(v.Keybind) == "string" and v.Keybind ~= "[-]" and v.Owner then
+                        local stateOn, name = false, "?"
+                        pcall(function()
+                            if v.Owner.GetState then
+                                stateOn = v.Owner:GetState() == true
+                            elseif v.Owner.State ~= nil then
+                                stateOn = v.Owner.State == true
+                            end
+                        end)
+                        pcall(function()
+                            if v.Owner.GetName then name = tostring(v.Owner:GetName() or "?") end
+                        end)
+                        if stateOn then
+                            local row = Instance.new("Frame")
+                            row.BackgroundTransparency = 1
+                            row.Size = UDim2.new(1, -4, 0, 16)
+                            row.ZIndex = 503
+                            row.Parent = scroll
+                            local label = Instance.new("TextLabel")
+                            label.Text = name
+                            label.FontFace = Library.UI.NewFont
+                            label.TextSize = Library.UI.FontSize
+                            label.TextColor3 = Library.Theme.Default.TextColor
+                            label.BackgroundTransparency = 1
+                            label.Size = UDim2.new(1, -48, 1, 0)
+                            label.Position = UDim2.new(0, 0, 0, 0)
+                            label.TextXAlignment = Enum.TextXAlignment.Left
+                            label.TextTruncate = Enum.TextTruncate.AtEnd
+                            label.ZIndex = 503
+                            label.Parent = row
+                            local key = Instance.new("TextLabel")
+                            key.Text = "[" .. v.Keybind .. "]"
+                            key.FontFace = Library.UI.NewFont
+                            key.TextSize = Library.UI.FontSize
+                            key.TextColor3 = Library.Theme.Default.Accent
+                            key.BackgroundTransparency = 1
+                            key.Size = UDim2.new(0, 46, 1, 0)
+                            key.Position = UDim2.new(1, -46, 0, 0)
+                            key.TextXAlignment = Enum.TextXAlignment.Right
+                            key.ZIndex = 503
+                            key.Parent = row
+                            rows[#rows + 1] = row
+                        end
                     end
                 end
             end
