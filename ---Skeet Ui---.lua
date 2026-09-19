@@ -8627,6 +8627,7 @@ do -- Library
             Border.Position = UDim2.fromOffset(24, 220)
             Border.Visible = false
             hudEnableDrag(Border)
+            hudEnableResize(Border, 180, 100)
             --
             local title = Instance.new("TextLabel")
             title.Text = "速度表"
@@ -8667,12 +8668,15 @@ do -- Library
             local history = {}
             local visible = false
             local acc = 0
+            local lastPos = nil
+            local smooth = 0
             --
             local function buildStatic()
                 if gridBuilt then return end
                 gridBuilt = true
                 local w = wave.AbsoluteSize.X
                 local h = wave.AbsoluteSize.Y
+                if w < 10 or h < 10 then gridBuilt = false return end
                 local x = 0
                 while x < w do
                     local v = Instance.new("Frame")
@@ -8715,51 +8719,61 @@ do -- Library
                 end
             end
             --
-            Library:Connection(game:GetService("RunService").RenderStepped, function(dt)
+            -- 本游戏移动为 CFrame 驱动（AssemblyLinearVelocity 恒 0）→ 位置差分测速
+            HUDRun.RenderStepped:Connect(function(dt)
                 if not visible then return end
-                buildStatic()
-                local char = game:GetService("Players").LocalPlayer.Character
-                local root = char and char:FindFirstChild("HumanoidRootPart")
-                local sp = 0
-                if root then
-                    local v = root.AssemblyLinearVelocity
-                    sp = math.sqrt(v.X * v.X + v.Z * v.Z)
-                end
-                value.Text = string.format("%.1f st/s", sp)
-                acc += dt
-                if acc < 0.06 then return end
-                acc = 0
-                history[#history + 1] = sp
-                while #history > maxN do
-                    table.remove(history, 1)
-                end
-                local w = wave.AbsoluteSize.X
-                local h = wave.AbsoluteSize.Y
-                local step = w / (maxN - 1)
-                for i = 1, maxN do
-                    local seg = segs[i]
-                    if i == 1 or i > #history then
-                        seg.Visible = false
+                local ok, err = pcall(function()
+                    buildStatic()
+                    local char = HUDPlayers.LocalPlayer.Character
+                    local root = char and char:FindFirstChild("HumanoidRootPart")
+                    local sp = 0
+                    if root then
+                        local p = root.Position
+                        if lastPos and dt > 0 then
+                            local flat = (p - lastPos) * Vector3.new(1, 0, 1)
+                            sp = flat.Magnitude / dt
+                        end
+                        lastPos = p
                     else
-                        local x0 = (i - 2) * step
-                        local x1 = (i - 1) * step
-                        local v0 = history[i - 1]
-                        local v1 = history[i]
-                        local y0 = h - math.clamp(v0 / 40, 0, 1) * (h - 6) - 3
-                        local y1 = h - math.clamp(v1 / 40, 0, 1) * (h - 6) - 3
-                        local dx = x1 - x0
-                        local dy = y1 - y0
-                        local len = math.sqrt(dx * dx + dy * dy)
-                        if len < 0.5 then
+                        lastPos = nil
+                    end
+                    smooth += (sp - smooth) * math.clamp(dt * 8, 0, 1)
+                    value.Text = string.format("%.1f st/s", smooth)
+                    acc += dt
+                    if acc < 0.06 then return end
+                    acc = 0
+                    history[#history + 1] = smooth
+                    while #history > maxN do
+                        table.remove(history, 1)
+                    end
+                    local w = wave.AbsoluteSize.X
+                    local h = wave.AbsoluteSize.Y
+                    local step = w / (maxN - 1)
+                    for i = 1, maxN do
+                        local seg = segs[i]
+                        if i == 1 or i > #history then
                             seg.Visible = false
                         else
-                            seg.Visible = true
-                            seg.Size = UDim2.new(0, len + 2, 0, 2)
-                            seg.Position = UDim2.new(0, (x0 + x1) / 2, 0, (y0 + y1) / 2)
-                            seg.Rotation = math.deg(math.atan2(dy, dx))
+                            local x0 = (i - 2) * step
+                            local x1 = (i - 1) * step
+                            local v0 = history[i - 1]
+                            local v1 = history[i]
+                            local y0 = h - math.clamp(v0 / 40, 0, 1) * (h - 6) - 3
+                            local y1 = h - math.clamp(v1 / 40, 0, 1) * (h - 6) - 3
+                            local dx = x1 - x0
+                            local dy = y1 - y0
+                            local len = math.sqrt(dx * dx + dy * dy)
+                            if len < 0.5 then
+                                seg.Visible = false
+                            else
+                                seg.Visible = true
+                                seg.Size = UDim2.new(0, len + 2, 0, 2)
+                                seg.Position = UDim2.new(0, (x0 + x1) / 2, 0, (y0 + y1) / 2)
+                                seg.Rotation = math.deg(math.atan2(dy, dx))
+                            end
                         end
                     end
-                end
+                end)
             end)
             --
             return {
@@ -8767,6 +8781,15 @@ do -- Library
                 SetVisible = function(v)
                     visible = v
                     Border.Visible = v
+                    if not v then lastPos = nil end
+                end,
+                SetAppearance = function(bgColor, borderColor, trans)
+                    pcall(function()
+                        Background.BackgroundColor3 = bgColor
+                        Background.BackgroundTransparency = trans
+                        Border.BackgroundColor3 = borderColor
+                        Border.BorderColor3 = borderColor
+                    end)
                 end,
             }
         end
@@ -8777,6 +8800,7 @@ do -- Library
             Border.Position = UDim2.fromOffset(24, 384)
             Border.Visible = false
             hudEnableDrag(Border)
+            hudEnableResize(Border, 180, 120)
             --
             local title = Instance.new("TextLabel")
             title.Text = "Hotkey List"
@@ -8817,10 +8841,8 @@ do -- Library
                     pcall(function() r:Destroy() end)
                 end
                 rows = {}
-                local count = 0
                 for _, v in pairs(Library.Flags) do
                     if type(v) == "table" and typeof(v.Keybind) == "string" and v.Keybind ~= "[-]" and v.Toggle and type(v.Toggle) == "table" and v.Toggle.State then
-                        count += 1
                         local name = "?"
                         pcall(function() name = tostring(v.Toggle:GetName() or "?") end)
                         local row = Instance.new("Frame")
@@ -8854,26 +8876,14 @@ do -- Library
                         rows[#rows + 1] = row
                     end
                 end
-                if count == 0 then
-                    local empty = Instance.new("TextLabel")
-                    empty.Text = "无已开启的快捷键功能"
-                    empty.FontFace = Library.UI.NewFont
-                    empty.TextSize = Library.UI.FontSize
-                    empty.TextColor3 = Library.Theme.Default.TextColor
-                    empty.BackgroundTransparency = 1
-                    empty.Size = UDim2.new(1, 0, 0, 16)
-                    empty.ZIndex = 503
-                    empty.Parent = scroll
-                    rows[#rows + 1] = empty
-                end
             end
             --
-            Library:Connection(game:GetService("RunService").RenderStepped, function(dt)
+            HUDRun.RenderStepped:Connect(function(dt)
                 if not visible then return end
                 acc += dt
                 if acc >= 0.4 then
                     acc = 0
-                    rebuild()
+                    pcall(rebuild)
                 end
             end)
             --
@@ -8883,8 +8893,16 @@ do -- Library
                     visible = v
                     Border.Visible = v
                     if v then
-                        rebuild()
+                        pcall(rebuild)
                     end
+                end,
+                SetAppearance = function(bgColor, borderColor, trans)
+                    pcall(function()
+                        Background.BackgroundColor3 = bgColor
+                        Background.BackgroundTransparency = trans
+                        Border.BackgroundColor3 = borderColor
+                        Border.BorderColor3 = borderColor
+                    end)
                 end,
             }
         end
