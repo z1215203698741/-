@@ -8597,6 +8597,30 @@ do -- Library
             Background.TileSize = UDim2.new(0, 4, 0, 548)
             Background.ZIndex = 500
             Background.Parent = Border2
+            --
+            -- 顶部流光条（与主菜单顶栏同款：深色渐变底 + 流光纹理）
+            local TopBarHolder = Instance.new("Frame")
+            TopBarHolder.Name = "TopBarGradientHolder"
+            TopBarHolder.Position = UDim2.new(0, 1, 0, 1)
+            TopBarHolder.Size = UDim2.new(1, -2, 0, 4)
+            TopBarHolder.BorderSizePixel = 0
+            TopBarHolder.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+            TopBarHolder.ZIndex = 504
+            TopBarHolder.Parent = Border
+            local TopBarGradient = Instance.new("UIGradient")
+            TopBarGradient.Rotation = 90
+            TopBarGradient.Transparency = NumberSequence.new{NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0.55)}
+            TopBarGradient.Color = ColorSequence.new{ColorSequenceKeypoint.new(0, Color3.fromRGB(12, 12, 12)), ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 0))}
+            TopBarGradient.Parent = TopBarHolder
+            local GradientBar = Instance.new("ImageLabel")
+            GradientBar.Name = "GradientBar"
+            GradientBar.Image = "rbxassetid://8508019876"
+            GradientBar.BackgroundTransparency = 1
+            GradientBar.Position = UDim2.new(0, 1, 0, 1)
+            GradientBar.Size = UDim2.new(1, -2, 1, -2)
+            GradientBar.BorderSizePixel = 0
+            GradientBar.ZIndex = 505
+            GradientBar.Parent = TopBarHolder
             return Border, Background
         end
         --
@@ -8681,7 +8705,7 @@ do -- Library
             title.TextColor3 = Library.Theme.Default.TextColor
             title.BackgroundTransparency = 1
             title.Size = UDim2.new(1, -12, 0, 14)
-            title.Position = UDim2.new(0, 6, 0, 4)
+            title.Position = UDim2.new(0, 6, 0, 6)
             title.TextXAlignment = Enum.TextXAlignment.Left
             title.ZIndex = 502
             title.Parent = Background
@@ -8693,14 +8717,14 @@ do -- Library
             value.TextColor3 = Library.Theme.Default.Accent
             value.BackgroundTransparency = 1
             value.Size = UDim2.new(1, -12, 0, 16)
-            value.Position = UDim2.new(0, 6, 0, 18)
+            value.Position = UDim2.new(0, 6, 0, 20)
             value.TextXAlignment = Enum.TextXAlignment.Left
             value.ZIndex = 502
             value.Parent = Background
             --
             local wave = Instance.new("Frame")
-            wave.Position = UDim2.new(0, 6, 0, 38)
-            wave.Size = UDim2.new(1, -12, 1, -44)
+            wave.Position = UDim2.new(0, 6, 0, 40)
+            wave.Size = UDim2.new(1, -12, 1, -46)
             wave.BackgroundTransparency = 1
             wave.ClipsDescendants = true
             wave.ZIndex = 502
@@ -8866,7 +8890,7 @@ do -- Library
             title.TextColor3 = Library.Theme.Default.Accent
             title.BackgroundTransparency = 1
             title.Size = UDim2.new(1, -12, 0, 16)
-            title.Position = UDim2.new(0, 6, 0, 4)
+            title.Position = UDim2.new(0, 6, 0, 6)
             title.TextXAlignment = Enum.TextXAlignment.Left
             title.ZIndex = 502
             title.Parent = Background
@@ -8876,13 +8900,13 @@ do -- Library
             divider.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
             divider.BorderSizePixel = 0
             divider.Size = UDim2.new(1, -12, 0, 1)
-            divider.Position = UDim2.new(0, 6, 0, 21)
+            divider.Position = UDim2.new(0, 6, 0, 23)
             divider.ZIndex = 502
             divider.Parent = Background
             --
             local scroll = Instance.new("ScrollingFrame")
-            scroll.Position = UDim2.new(0, 6, 0, 25)
-            scroll.Size = UDim2.new(1, -12, 1, -31)
+            scroll.Position = UDim2.new(0, 6, 0, 27)
+            scroll.Size = UDim2.new(1, -12, 1, -33)
             scroll.BackgroundTransparency = 1
             scroll.BorderSizePixel = 0
             scroll.ScrollBarThickness = 2
@@ -8899,16 +8923,14 @@ do -- Library
             layout.Parent = scroll
             --
             local rows = {}
+            local lastSig = ""
             local visible = false
             local acc = 0
             --
-            local function rebuild()
-                for _, r in ipairs(rows) do
-                    pcall(function() r:Destroy() end)
-                end
-                rows = {}
+            -- 收集当前应显示的条目（已绑定 + Owner 主开关开启）
+            local function collect()
+                local list = {}
                 for _, v in ipairs(Library.KeybindList or {}) do
-                    -- 显示条件：已绑定键位 且 关联功能开关处于开启状态（状态/名称从 Owner 主开关本体取）
                     if typeof(v.Keybind) == "string" and v.Keybind ~= "[-]" and v.Owner then
                         local stateOn, name = false, "?"
                         pcall(function()
@@ -8922,46 +8944,69 @@ do -- Library
                             if v.Owner.GetName then name = tostring(v.Owner:GetName() or "?") end
                         end)
                         if stateOn then
-                            local row = Instance.new("Frame")
-                            row.BackgroundTransparency = 1
-                            row.Size = UDim2.new(1, -4, 0, 16)
-                            row.ZIndex = 503
-                            row.Parent = scroll
-                            local label = Instance.new("TextLabel")
-                            label.Text = name
-                            label.FontFace = Library.UI.NewFont
-                            label.TextSize = Library.UI.FontSize
-                            label.TextColor3 = Library.Theme.Default.TextColor
-                            label.BackgroundTransparency = 1
-                            label.Size = UDim2.new(1, -48, 1, 0)
-                            label.Position = UDim2.new(0, 0, 0, 0)
-                            label.TextXAlignment = Enum.TextXAlignment.Left
-                            label.TextTruncate = Enum.TextTruncate.AtEnd
-                            label.ZIndex = 503
-                            label.Parent = row
-                            local key = Instance.new("TextLabel")
-                            key.Text = "[" .. v.Keybind .. "]"
-                            key.FontFace = Library.UI.NewFont
-                            key.TextSize = Library.UI.FontSize
-                            key.TextColor3 = Library.Theme.Default.Accent
-                            key.BackgroundTransparency = 1
-                            key.Size = UDim2.new(0, 46, 1, 0)
-                            key.Position = UDim2.new(1, -46, 0, 0)
-                            key.TextXAlignment = Enum.TextXAlignment.Right
-                            key.ZIndex = 503
-                            key.Parent = row
-                            rows[#rows + 1] = row
+                            list[#list + 1] = {name = name, key = v.Keybind}
                         end
                     end
+                end
+                return list
+            end
+            --
+            -- 行池增量更新：内容签名不变时零操作（不销毁不重建=无闪烁），变化时复用已有行只改文本
+            local function refresh()
+                local list = collect()
+                local parts = {}
+                for i, e in ipairs(list) do
+                    parts[i] = e.name .. "\1" .. e.key
+                end
+                local sig = #list .. "#" .. table.concat(parts, "\2")
+                if sig == lastSig then return end
+                lastSig = sig
+                for i, e in ipairs(list) do
+                    local r = rows[i]
+                    if not r then
+                        local row = Instance.new("Frame")
+                        row.BackgroundTransparency = 1
+                        row.Size = UDim2.new(1, -4, 0, 16)
+                        row.ZIndex = 503
+                        local label = Instance.new("TextLabel")
+                        label.FontFace = Library.UI.NewFont
+                        label.TextSize = Library.UI.FontSize
+                        label.TextColor3 = Library.Theme.Default.TextColor
+                        label.BackgroundTransparency = 1
+                        label.Size = UDim2.new(1, -48, 1, 0)
+                        label.TextXAlignment = Enum.TextXAlignment.Left
+                        label.TextTruncate = Enum.TextTruncate.AtEnd
+                        label.ZIndex = 503
+                        label.Parent = row
+                        local key = Instance.new("TextLabel")
+                        key.FontFace = Library.UI.NewFont
+                        key.TextSize = Library.UI.FontSize
+                        key.TextColor3 = Library.Theme.Default.Accent
+                        key.BackgroundTransparency = 1
+                        key.Size = UDim2.new(0, 46, 1, 0)
+                        key.Position = UDim2.new(1, -46, 0, 0)
+                        key.TextXAlignment = Enum.TextXAlignment.Right
+                        key.ZIndex = 503
+                        key.Parent = row
+                        row.Parent = scroll
+                        r = {frame = row, label = label, key = key}
+                        rows[i] = r
+                    end
+                    r.frame.Visible = true
+                    r.label.Text = e.name
+                    r.key.Text = "[" .. e.key .. "]"
+                end
+                for i = #list + 1, #rows do
+                    rows[i].frame.Visible = false
                 end
             end
             --
             HUDRun.RenderStepped:Connect(function(dt)
                 if not visible then return end
                 acc += dt
-                if acc >= 0.4 then
+                if acc >= 0.1 then
                     acc = 0
-                    pcall(rebuild)
+                    pcall(refresh)
                 end
             end)
             --
@@ -8971,7 +9016,7 @@ do -- Library
                     visible = v
                     Border.Visible = v
                     if v then
-                        pcall(rebuild)
+                        pcall(refresh)
                     end
                 end,
                 SetAppearance = function(bgColor, borderColor, trans)
