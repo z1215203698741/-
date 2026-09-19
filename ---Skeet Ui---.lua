@@ -8560,6 +8560,335 @@ do -- Library
             return Notification
         end
         --
+        -- ==================== HUD 悬浮窗：速度表（心跳网格ECG）+ 快捷键绑定列表（方块SK风格，可拖动，默认隐藏） ====================
+        local function hudSquareFrame(name, sizeU2)
+            local Border = Instance.new("Frame")
+            Border.Name = "HUD_" .. name
+            Border.Size = sizeU2
+            Border.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+            Border.BorderColor3 = Color3.fromRGB(12, 12, 12)
+            Border.BorderSizePixel = 1
+            Border.Active = true
+            Border.ZIndex = 500
+            Border.Parent = MainUI
+            --
+            local Border2 = Instance.new("Frame")
+            Border2.Size = UDim2.new(1, -4, 1, -4)
+            Border2.Position = UDim2.new(0, 2, 0, 2)
+            Border2.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+            Border2.BorderColor3 = Color3.fromRGB(40, 40, 40)
+            Border2.BorderSizePixel = 1
+            Border2.ZIndex = 500
+            Border2.Parent = Border
+            --
+            local Background = Instance.new("ImageLabel")
+            Background.Size = UDim2.new(1, -6, 1, -6)
+            Background.Position = UDim2.new(0, 3, 0, 3)
+            Background.BackgroundColor3 = Color3.fromRGB(23, 23, 23)
+            Background.BorderColor3 = Color3.fromRGB(60, 60, 60)
+            Background.BorderSizePixel = 0
+            Background.Image = "rbxassetid://15453092054"
+            Background.ScaleType = Enum.ScaleType.Tile
+            Background.TileSize = UDim2.new(0, 4, 0, 548)
+            Background.ZIndex = 500
+            Background.Parent = Border2
+            return Border, Background
+        end
+        --
+        local function hudEnableDrag(frame)
+            local UIS = game:GetService("UserInputService")
+            local dragging = false
+            local dragStart, frameStart
+            frame.InputBegan:Connect(function(input, gp)
+                if gp then return end
+                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                    dragging = true
+                    dragStart = input.Position
+                    frameStart = frame.Position
+                end
+            end)
+            UIS.InputChanged:Connect(function(input)
+                if not dragging then return end
+                if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+                    local delta = input.Position - dragStart
+                    frame.Position = UDim2.new(frameStart.X.Scale, frameStart.X.Offset + delta.X, frameStart.Y.Scale, frameStart.Y.Offset + delta.Y)
+                end
+            end)
+            UIS.InputEnded:Connect(function(input)
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+        --
+        function Library:CreateSpeedHUD()
+            if not MainUI then return nil end
+            local Border, Background = hudSquareFrame("Speed", UDim2.fromOffset(232, 126))
+            Border.Position = UDim2.fromOffset(24, 220)
+            Border.Visible = false
+            hudEnableDrag(Border)
+            --
+            local title = Instance.new("TextLabel")
+            title.Text = "速度表"
+            title.Font = Library.UI.NewFont
+            title.TextSize = Library.UI.FontSize
+            title.TextColor3 = Library.Theme.Default.TextColor
+            title.BackgroundTransparency = 1
+            title.Size = UDim2.new(1, -12, 0, 14)
+            title.Position = UDim2.new(0, 6, 0, 4)
+            title.TextXAlignment = Enum.TextXAlignment.Left
+            title.ZIndex = 502
+            title.Parent = Background
+            --
+            local value = Instance.new("TextLabel")
+            value.Text = "0.0 st/s"
+            value.Font = Library.UI.NewFont
+            value.TextSize = 15
+            value.TextColor3 = Library.Theme.Default.Accent
+            value.BackgroundTransparency = 1
+            value.Size = UDim2.new(1, -12, 0, 16)
+            value.Position = UDim2.new(0, 6, 0, 18)
+            value.TextXAlignment = Enum.TextXAlignment.Left
+            value.ZIndex = 502
+            value.Parent = Background
+            --
+            local wave = Instance.new("Frame")
+            wave.Position = UDim2.new(0, 6, 0, 38)
+            wave.Size = UDim2.new(1, -12, 1, -44)
+            wave.BackgroundTransparency = 1
+            wave.ClipsDescendants = true
+            wave.ZIndex = 502
+            wave.Parent = Background
+            --
+            local Accent = Library.Theme.Default.Accent
+            local gridBuilt = false
+            local segs = {}
+            local maxN = 54
+            local history = {}
+            local visible = false
+            local acc = 0
+            --
+            local function buildStatic()
+                if gridBuilt then return end
+                gridBuilt = true
+                local w = wave.AbsoluteSize.X
+                local h = wave.AbsoluteSize.Y
+                local x = 0
+                while x < w do
+                    local v = Instance.new("Frame")
+                    v.Size = UDim2.new(0, 1, 1, 0)
+                    v.Position = UDim2.new(0, x, 0, 0)
+                    v.BackgroundColor3 = Accent
+                    v.BackgroundTransparency = 0.85
+                    v.BorderSizePixel = 0
+                    v.ZIndex = 502
+                    v.Parent = wave
+                    x += 16
+                end
+                local y = 0
+                while y < h do
+                    local hline = Instance.new("Frame")
+                    hline.Size = UDim2.new(1, 0, 0, 1)
+                    hline.Position = UDim2.new(0, 0, 0, y)
+                    hline.BackgroundColor3 = Accent
+                    hline.BackgroundTransparency = 0.85
+                    hline.BorderSizePixel = 0
+                    hline.ZIndex = 502
+                    hline.Parent = wave
+                    y += 14
+                end
+                for i = 1, maxN do
+                    local seg = Instance.new("Frame")
+                    seg.AnchorPoint = Vector2.new(0.5, 0.5)
+                    seg.BackgroundColor3 = Accent
+                    seg.BorderSizePixel = 0
+                    seg.Size = UDim2.new(0, 4, 0, 2)
+                    seg.Visible = false
+                    seg.ZIndex = 503
+                    local stroke = Instance.new("UIStroke")
+                    stroke.Color = Accent
+                    stroke.Thickness = 2
+                    stroke.Transparency = 0.55
+                    stroke.Parent = seg
+                    seg.Parent = wave
+                    segs[i] = seg
+                end
+            end
+            --
+            Library:Connection(game:GetService("RunService").RenderStepped, function(dt)
+                if not visible then return end
+                buildStatic()
+                local char = game:GetService("Players").LocalPlayer.Character
+                local root = char and char:FindFirstChild("HumanoidRootPart")
+                local sp = 0
+                if root then
+                    local v = root.AssemblyLinearVelocity
+                    sp = math.sqrt(v.X * v.X + v.Z * v.Z)
+                end
+                value.Text = string.format("%.1f st/s", sp)
+                acc += dt
+                if acc < 0.06 then return end
+                acc = 0
+                history[#history + 1] = sp
+                while #history > maxN do
+                    table.remove(history, 1)
+                end
+                local w = wave.AbsoluteSize.X
+                local h = wave.AbsoluteSize.Y
+                local step = w / (maxN - 1)
+                for i = 1, maxN do
+                    local seg = segs[i]
+                    if i == 1 or i > #history then
+                        seg.Visible = false
+                    else
+                        local x0 = (i - 2) * step
+                        local x1 = (i - 1) * step
+                        local v0 = history[i - 1]
+                        local v1 = history[i]
+                        local y0 = h - math.clamp(v0 / 40, 0, 1) * (h - 6) - 3
+                        local y1 = h - math.clamp(v1 / 40, 0, 1) * (h - 6) - 3
+                        local dx = x1 - x0
+                        local dy = y1 - y0
+                        local len = math.sqrt(dx * dx + dy * dy)
+                        if len < 0.5 then
+                            seg.Visible = false
+                        else
+                            seg.Visible = true
+                            seg.Size = UDim2.new(0, len + 2, 0, 2)
+                            seg.Position = UDim2.new(0, (x0 + x1) / 2, 0, (y0 + y1) / 2)
+                            seg.Rotation = math.deg(math.atan2(dy, dx))
+                        end
+                    end
+                end
+            end)
+            --
+            return {
+                Frame = Border,
+                SetVisible = function(v)
+                    visible = v
+                    Border.Visible = v
+                end,
+            }
+        end
+        --
+        function Library:CreateHotkeyHUD()
+            if not MainUI then return nil end
+            local Border, Background = hudSquareFrame("Hotkeys", UDim2.fromOffset(232, 180))
+            Border.Position = UDim2.fromOffset(24, 384)
+            Border.Visible = false
+            hudEnableDrag(Border)
+            --
+            local title = Instance.new("TextLabel")
+            title.Text = "Hotkey List"
+            title.Font = Library.UI.NewFont
+            title.TextSize = Library.UI.FontSize
+            title.TextColor3 = Library.Theme.Default.Accent
+            title.BackgroundTransparency = 1
+            title.Size = UDim2.new(1, -12, 0, 16)
+            title.Position = UDim2.new(0, 6, 0, 4)
+            title.TextXAlignment = Enum.TextXAlignment.Left
+            title.ZIndex = 502
+            title.Parent = Background
+            --
+            local scroll = Instance.new("ScrollingFrame")
+            scroll.Position = UDim2.new(0, 6, 0, 22)
+            scroll.Size = UDim2.new(1, -12, 1, -28)
+            scroll.BackgroundTransparency = 1
+            scroll.BorderSizePixel = 0
+            scroll.ScrollBarThickness = 2
+            scroll.ScrollBarImageColor3 = Library.Theme.Default.Accent
+            scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+            scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+            scroll.ZIndex = 502
+            scroll.Parent = Background
+            --
+            local layout = Instance.new("UIListLayout")
+            layout.FillDirection = Enum.FillDirection.Vertical
+            layout.SortOrder = Enum.SortOrder.LayoutOrder
+            layout.Padding = UDim.new(0, 2)
+            layout.Parent = scroll
+            --
+            local rows = {}
+            local visible = false
+            local acc = 0
+            --
+            local function rebuild()
+                for _, r in ipairs(rows) do
+                    pcall(function() r:Destroy() end)
+                end
+                rows = {}
+                local count = 0
+                for _, v in pairs(Library.Flags) do
+                    if type(v) == "table" and typeof(v.Keybind) == "string" and v.Keybind ~= "[-]" and v.Toggle and type(v.Toggle) == "table" and v.Toggle.State then
+                        count += 1
+                        local name = "?"
+                        pcall(function() name = tostring(v.Toggle:GetName() or "?") end)
+                        local row = Instance.new("Frame")
+                        row.BackgroundTransparency = 1
+                        row.Size = UDim2.new(1, -4, 0, 16)
+                        row.ZIndex = 503
+                        row.Parent = scroll
+                        local label = Instance.new("TextLabel")
+                        label.Text = name
+                        label.Font = Library.UI.NewFont
+                        label.TextSize = Library.UI.FontSize
+                        label.TextColor3 = Library.Theme.Default.TextColor
+                        label.BackgroundTransparency = 1
+                        label.Size = UDim2.new(1, -48, 1, 0)
+                        label.Position = UDim2.new(0, 0, 0, 0)
+                        label.TextXAlignment = Enum.TextXAlignment.Left
+                        label.TextTruncate = Enum.TextTruncate.AtEnd
+                        label.ZIndex = 503
+                        label.Parent = row
+                        local key = Instance.new("TextLabel")
+                        key.Text = "[" .. v.Keybind .. "]"
+                        key.Font = Library.UI.NewFont
+                        key.TextSize = Library.UI.FontSize
+                        key.TextColor3 = Library.Theme.Default.Accent
+                        key.BackgroundTransparency = 1
+                        key.Size = UDim2.new(0, 46, 1, 0)
+                        key.Position = UDim2.new(1, -46, 0, 0)
+                        key.TextXAlignment = Enum.TextXAlignment.Right
+                        key.ZIndex = 503
+                        key.Parent = row
+                        rows[#rows + 1] = row
+                    end
+                end
+                if count == 0 then
+                    local empty = Instance.new("TextLabel")
+                    empty.Text = "无已开启的快捷键功能"
+                    empty.Font = Library.UI.NewFont
+                    empty.TextSize = Library.UI.FontSize
+                    empty.TextColor3 = Library.Theme.Default.TextColor
+                    empty.BackgroundTransparency = 1
+                    empty.Size = UDim2.new(1, 0, 0, 16)
+                    empty.ZIndex = 503
+                    empty.Parent = scroll
+                    rows[#rows + 1] = empty
+                end
+            end
+            --
+            Library:Connection(game:GetService("RunService").RenderStepped, function(dt)
+                if not visible then return end
+                acc += dt
+                if acc >= 0.4 then
+                    acc = 0
+                    rebuild()
+                end
+            end)
+            --
+            return {
+                Frame = Border,
+                SetVisible = function(v)
+                    visible = v
+                    Border.Visible = v
+                    if v then
+                        rebuild()
+                    end
+                end,
+            }
+        end
+        --
         function Library:Init()
             Library.UI.Initialized = true
             --
