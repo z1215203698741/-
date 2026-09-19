@@ -803,9 +803,19 @@ do -- Library
         --
         for Index, Value in Config do
             if Library.Flags[Index] and Library.Flags[Index].Set then
-                Library.Flags[Index]:Set(Value)
+                -- 单个控件恢复失败不中断整个配置加载
+                pcall(function()
+                    Library.Flags[Index]:Set(Value)
+                end)
             end
         end
+        --
+        -- 配置加载完成广播：供功能模块在加载后重申互斥显隐/应用状态
+        task.defer(function()
+            for _, cb in ipairs(Library.ConfigLoadedCallbacks or {}) do
+                pcall(cb)
+            end
+        end)
     end
     --
     function Library:SectionDragging(Frame)
