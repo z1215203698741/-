@@ -4744,6 +4744,12 @@ do -- Library
             function TextBox:Get()
                 return TextBoxObject.Text
             end
+            --
+            -- Set：配置加载恢复用（LoadConfig 对每个 Flag 调 Set——TextBox 没有它则文本永远恢复不了）
+            function TextBox:Set(Text)
+                TextBoxObject.Text = tostring(Text or "")
+                Options.Callback(TextBoxObject.Text)
+            end
         end
         --
         do -- Connections
