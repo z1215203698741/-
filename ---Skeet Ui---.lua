@@ -704,6 +704,11 @@ do -- Library
             end
         end
         --
+        -- 保存前回调：动态创建的模块（控件未注册时）在这里把内部状态补全进 Config 表
+        for _, cb in ipairs(Library.ConfigSaveCallbacks or {}) do
+            pcall(cb, Config)
+        end
+        --
         return HttpService:JSONEncode(Config)
     end
     --
@@ -795,6 +800,12 @@ do -- Library
                 if ok then applied += 1 else failed += 1 end
             end
         end
+        -- 配置加载完成广播（带原始配置表：供动态创建的控件在加载时恢复状态）
+        task.defer(function()
+            for _, cb in ipairs(Library.ConfigLoadedCallbacks or {}) do
+                pcall(cb, data)
+            end
+        end)
         return true, applied, failed
     end
     --
@@ -810,10 +821,10 @@ do -- Library
             end
         end
         --
-        -- 配置加载完成广播：供功能模块在加载后重申互斥显隐/应用状态
+        -- 配置加载完成广播：供功能模块在加载后重申互斥显隐/应用状态（带原始配置表）
         task.defer(function()
             for _, cb in ipairs(Library.ConfigLoadedCallbacks or {}) do
-                pcall(cb)
+                pcall(cb, Config)
             end
         end)
     end
