@@ -671,7 +671,11 @@ do -- Library
         --
         for Index, Value in Library.Flags do
             if Value.Get and not string.find(Index, "_Status") then
-                local Got = Value:Get()
+                -- 单个 flag Get 异常只跳过该项，不拖垮整个保存（此前一个控件抛错会导致"生成配置失败"整份丢失）
+                local okGet, Got = pcall(Value.Get, Value)
+                if not okGet then
+                    continue
+                end
                 --
                 -- Keybind 抢占 Toggle flag 的特殊情况（Keybind:Toggle 里 Flags[ToggleFlag] = Keybind）：
                 -- 此时 Get() 返回键位名，开关状态会丢——必须打包 {Key, State} 一起保存，
